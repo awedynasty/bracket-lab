@@ -1,0 +1,41 @@
+name: Nightly data update
+
+on:
+  schedule:
+    - cron: "17 9 * * *"   # every day at 9:17 UTC (about 4 AM Eastern, after late West Coast games)
+  workflow_dispatch:        # adds a "Run workflow" button on the Actions tab to update on demand
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Pull latest data
+        env:
+          SPORTSDATA_KEY: ${{ secrets.SPORTSDATA_KEY }}
+        run: python3 scripts/update_data.py
+
+      - name: Save data to the repo (the site redeploys automatically)
+        run: |
+          git config user.name "hoops-resume-bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data
+          if git diff --cached --quiet; then
+            echo "No data changes."
+          else
+            git commit -m "Nightly data update $(date -u +%Y-%m-%d)"
+            git push
+          fi
