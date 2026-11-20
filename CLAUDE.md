@@ -1,5 +1,8 @@
 # Notes for Claude
 
+The site is called **Nasta's Bracket Lab** (repo: hoops-resume). Palette "Hardwood Analytics":
+midnight navy, slate, hardwood amber (bubble/highlights), warm white, green (wins/locks).
+
 The owner isn't a programmer and asks for changes in plain English. Keep the
 project simple: no build step, no frameworks, no npm dependencies, and only the
 Python standard library.

@@ -1,4 +1,4 @@
-// Hoops Resume - front end.
+// Nasta's Bracket Lab - front end.
 // Reads data/teams.json (all teams) and data/team/<id>.json (one team's games).
 // Pages:  #/            -> every team, sortable
 //         #/team/<id>   -> one team's resume
@@ -16,8 +16,10 @@ const LOC = { H: "vs", A: "@", N: "N" };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const rec = (w, l) => `${w}-${l}`;
 const fmtDate = (iso) => { const [y, m, d] = iso.split("-"); return `${+m}/${+d}`; };
+// ESPN also publishes a dark-background version of each logo; small logos use it in dark mode
+// (big logos sit on a white circle, so they keep the normal version).
 const logo = (t, cls = "logo") => t && t.logo
-  ? `<img class="${cls}" src="${esc(t.logo)}" alt="" loading="lazy">`
+  ? `<picture>${cls === "logo" && t.logo.includes("/500/") ? `<source srcset="${esc(t.logo.replace("/500/", "/500-dark/"))}" media="(prefers-color-scheme: dark)">` : ""}<img class="${cls}" src="${esc(t.logo)}" alt="" loading="lazy"></picture>`
   : `<span class="${cls} blank"></span>`;
 const rankVal = (v) => (v == null ? "—" : v);
 const qrec = (t, q) => rec(...t.quads[q]);
@@ -80,7 +82,7 @@ const COLUMNS = [
 ];
 
 function renderHome() {
-  document.title = "Hoops Resume";
+  document.title = "Nasta's Bracket Lab";
   const confs = [...new Set(state.meta.teams.map((t) => t.conf))].sort();
   app.innerHTML = `
     ${quadNotice()}
@@ -140,7 +142,7 @@ function drawTable() {
 // ---------- team page ----------
 async function renderTeam(id) {
   const t = state.byId[id];
-  document.title = `${t.name} · Hoops Resume`;
+  document.title = `${t.name} · Nasta's Bracket Lab`;
   app.innerHTML = `<p class="loading">Loading ${esc(t.name)}…</p>`;
   const detail = await (await fetch(`data/team/${id}.json`, { cache: "no-cache" })).json();
   const games = detail.games;
@@ -157,7 +159,7 @@ async function renderTeam(id) {
   const upcoming = games.filter((g) => !g.final);
   const last5 = played.slice(-5).reverse();
   const next5 = upcoming.slice(0, 5);
-  const color = "#" + (t.color || "0b1d4a");
+  const color = "#" + (t.color || "1e293b");
 
   const tile = (label, v, hint = "") =>
     `<div class="tile"><div class="label">${label}</div><div class="value num ${v == null ? "na" : ""}">${v ?? "—"}</div>${hint ? `<div class="hint">${hint}</div>` : ""}</div>`;
@@ -299,7 +301,7 @@ function rankOf(t) {
 }
 
 function renderMargin() {
-  document.title = "Margin of Defeat · Hoops Resume";
+  document.title = "Margin of Defeat · Nasta's Bracket Lab";
   const confs = [...new Set(state.meta.teams.map((t) => t.conf))].sort();
   const src = rankSourceLabel();
   app.innerHTML = `
@@ -388,7 +390,7 @@ function teamSelect(id, selected) {
 
 async function renderCompare(aId, bId) {
   const a = state.byId[aId], b = state.byId[bId];
-  document.title = a && b ? `${a.name} vs ${b.name} · Hoops Resume` : "Compare · Hoops Resume";
+  document.title = a && b ? `${a.name} vs ${b.name} · Nasta's Bracket Lab` : "Compare · Nasta's Bracket Lab";
   const pickers = `
     <h1 class="page-title">Compare Teams</h1>
     <div class="compare-pick">
@@ -441,7 +443,7 @@ async function renderCompare(aId, bId) {
     common.push([g, finalsB[g.oppId]]);
   }
   const res = (g) => `<span class="chip ${g.result}">${g.result}</span> <span class="num">${g.score}</span> <span class="dim">${LOC[g.loc]} ${fmtDate(g.date)}</span>`;
-  const head = (t) => `<a class="cmp-team" href="#/team/${t.id}" style="--team:#${esc(t.color || "0b1d4a")}">
+  const head = (t) => `<a class="cmp-team" href="#/team/${t.id}" style="--team:#${esc(t.color || "1e293b")}">
       ${logo(t, "cmp-logo")}<div><div class="cmp-name">${esc(t.name)}</div>
       <div class="cmp-sub">${rec(t.wins, t.losses)} · ${esc(t.confShort)}</div></div></a>`;
 
@@ -482,7 +484,7 @@ let bracketData = null;
 const pct = (x) => `${Math.round(x * 100)}%`;
 
 async function renderBracket() {
-  document.title = "Bracketology · Hoops Resume";
+  document.title = "Bracketology · Nasta's Bracket Lab";
   if (!bracketData) {
     app.innerHTML = `<p class="loading">Loading…</p>`;
     bracketData = await (await fetch("data/bracket.json", { cache: "no-cache" })).json();

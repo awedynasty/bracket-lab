@@ -1,4 +1,4 @@
-# Hoops Resume
+# Nasta's Bracket Lab
 
 Team resumes for every Division I men's college basketball team: rankings
 (AP, NET, BPI, Torvik, Strength of Record, Wins Above Bubble, SOS), Quad 1–4 records with every game,

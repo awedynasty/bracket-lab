@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Nightly data update for the Hoops Resume site.
+"""Nightly data update for Nasta's Bracket Lab.
 
 Pulls data for every Division I men's basketball team and writes JSON files
 into docs/data/, which the website reads.
