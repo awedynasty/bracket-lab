@@ -9,6 +9,7 @@ Sources
                     (needs the SPORTSDATA_KEY environment variable)
   * ESPN          - game-by-game schedules/results, logos, BPI, SOR, SOS
   * NCAA.com      - NET rankings (used for quads once the season's NET is out)
+  * Barttorvik    - T-Rank and Wins Above Bubble (Torvik's published season CSV)
 
 Run it with:   SPORTSDATA_KEY=yourkey python3 scripts/update_data.py
 Uses only the Python standard library, so there is nothing to install.
@@ -16,7 +17,9 @@ Uses only the Python standard library, so there is nothing to install.
 
 from __future__ import annotations
 
+import csv
 import datetime as dt
+import io
 import html
 import json
 import os
@@ -260,6 +263,30 @@ def load_net(matcher: TeamMatcher, season_start: dt.date) -> tuple[dict[str, int
     return out, as_of.isoformat() if as_of else None
 
 
+def load_torvik(matcher: TeamMatcher, season_year: int) -> dict[str, dict]:
+    """T-Rank and WAB keyed by ESPN id, from Torvik's published season file."""
+    try:
+        text = fetch(f"https://barttorvik.com/{season_year}_team_results.csv", as_json=False)
+        rows = list(csv.DictReader(io.StringIO(text)))
+    except Exception as e:
+        log(f"Torvik: request failed ({e}) - skipping")
+        return {}
+    out, missed = {}, []
+    for r in rows:
+        espn_id = matcher.find(r["team"])
+        if not espn_id:
+            missed.append(r["team"])
+            continue
+        wab = r.get("WAB")
+        out[espn_id] = {
+            "trank": to_int(r.get("rank")),
+            "wab": round(float(wab), 1) if wab not in (None, "") else None,
+            "wabRank": to_int(r.get("WAB Rk")),
+        }
+    log(f"Torvik: {len(out)} teams" + (f", unmatched: {missed}" if missed else ""))
+    return out
+
+
 def load_espn_conferences() -> dict[str, str]:
     """Fallback conference lookup (ESPN team id -> conference name)."""
     try:
@@ -340,6 +367,7 @@ def main() -> int:
     season_start = dt.date(dt.date.today().year if dt.date.today().month >= 7 else dt.date.today().year - 1, 11, 1)
     net, net_as_of = load_net(matcher, season_start)
     sdio = load_sportsdata(matcher)
+    torvik = load_torvik(matcher, season_start.year + 1)
     espn_conf = load_espn_conferences() if len(sdio) < 300 else {}
 
     d1_ids = {t["id"] for t in espn_teams}
@@ -405,6 +433,7 @@ def main() -> int:
             "ap": s.get("ap"),
             "net": net.get(tid),
             **b,
+            **torvik.get(tid, {"trank": None, "wab": None, "wabRank": None}),
             "quads": quads,
             "lostTo": lost_to,
             "marginOfDefeat": sum(x["by"] for x in lost_to),

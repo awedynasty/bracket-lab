@@ -63,7 +63,9 @@ const COLUMNS = [
   { key: "ap", label: "AP", get: (t) => t.ap, c: true },
   { key: "net", label: "NET", get: (t) => t.net, c: true },
   { key: "bpiRank", label: "BPI", get: (t) => t.bpiRank, c: true },
+  { key: "trank", label: "Torvik", get: (t) => t.trank, c: true },
   { key: "sor", label: "SOR", get: (t) => t.sor, c: true },
+  { key: "wabRank", label: "WAB", get: (t) => t.wabRank, c: true },
   { key: "sos", label: "SOS", get: (t) => t.sos, c: true },
   ...[1, 2, 3, 4].map((q) => ({
     key: "q" + q, label: "Q" + q, c: true, desc: q <= 2,
@@ -179,7 +181,9 @@ async function renderTeam(id) {
       ${tile("AP", t.ap, t.ap ? "" : "Unranked")}
       ${tile("NET", t.net, t.net ? "" : "Not out yet")}
       ${tile("BPI", t.bpiRank, t.bpi != null ? `Rating ${t.bpi > 0 ? "+" : ""}${t.bpi}` : "")}
+      ${tile("Torvik", t.trank)}
       ${tile("Strength of Record", t.sor)}
+      ${tile("Wins Above Bubble", t.wabRank, t.wab != null ? `${t.wab > 0 ? "+" : ""}${t.wab} wins` : "")}
       ${tile("SOS", t.sos)}
       ${tile("Non-Con SOS", t.ncsos)}
     </div>

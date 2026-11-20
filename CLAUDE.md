@@ -8,7 +8,9 @@ Python standard library.
   `docs/data/team/<espnId>.json` (one team's games). ESPN team ids are the primary key.
 - Sources: SportsDataIO `LeagueHierarchy`, `Stadiums` and `PlayersByActive` (team info,
   arenas, rosters; the key does not cover games or stats), ESPN team schedules and BPI powerindex, and the NCAA.com NET HTML table.
-  barttorvik.com blocks automated requests behind a browser check, so don't work around it.
+  Torvik T-Rank/WAB come from the published `barttorvik.com/<year>_team_results.csv`; its
+  HTML pages sit behind a browser check, so don't scrape or work around those. The cbbdata
+  API (successor to toRvik) has no data after June 2025, so it isn't used.
 - Name matching across sources: `norm()` + `TeamMatcher`, with overrides in
   `scripts/team_aliases.json`. Watch the updater's log for "unmatched".
 - Quads use NET once the current season's NET is published; until then BPI rank.

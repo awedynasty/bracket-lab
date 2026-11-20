@@ -1,7 +1,7 @@
 # Hoops Resume
 
 Team resumes for every Division I men's college basketball team: rankings
-(AP, NET, BPI, Strength of Record, SOS), Quad 1–4 records with every game,
+(AP, NET, BPI, Torvik, Strength of Record, Wins Above Bubble, SOS), Quad 1–4 records with every game,
 last and next 5 games, and conference standings.
 
 The data updates itself every night, so there's nothing to run day to day.
@@ -12,7 +12,7 @@ The data updates itself every night, so there's nothing to run day to day.
 |---|---|---|
 | Website | `docs/` | The pages people see, hosted free on GitHub Pages |
 | Data | `docs/data/` | JSON files the website reads. **Don't edit by hand**: they're rebuilt nightly |
-| Updater | `scripts/update_data.py` | Pulls fresh data from SportsDataIO, ESPN and NCAA.com |
+| Updater | `scripts/update_data.py` | Pulls fresh data from SportsDataIO, ESPN, NCAA.com and Barttorvik |
 | Schedule | `.github/workflows/update-data.yml` | Runs the updater every night around 4 AM Eastern |
 
 **Quads** use the NCAA NET once the NCAA publishes it for the season (usually early
