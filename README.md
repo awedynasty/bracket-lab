@@ -19,8 +19,9 @@ The data updates itself every night, so there's nothing to run day to day.
 **Quads** use the NCAA NET once the NCAA publishes it for the season (usually early
 December). Until then, they're estimated from ESPN's BPI rank. The switch happens automatically.
 
-**Bracketology** learns from every tournament since 2015 how a team's Wins Above Bubble and
-Torvik rankings on Selection Sunday translated into a bid and a seed. Once a year, after the
+**Bracketology** learns from every tournament since 2015 how teams' rankings on Selection
+Sunday (WAB, Torvik, NET, SOR, plus KenPom, BPI and KPI for the history table) translated into
+a bid and a seed. Once a year, after the
 tournament, add that season to `scripts/build_bracket_history.py` and rerun it (or ask Claude to).
 
 ## One-time setup

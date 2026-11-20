@@ -11,6 +11,11 @@ the nightly update never needs these sources.
 Seeds come from cbbdata (2015-2025, needs CBD_API_KEY and `pip install pyarrow`)
 and ESPN tournament games (2026 on). To add a new season after the tournament,
 add its Selection Sunday to SELECTION_SUNDAYS and rerun.
+
+NET, KenPom, BPI, SOR and KPI ranks as of Selection Sunday come from Kaggle's
+March Machine Learning Mania "MMasseyOrdinals.csv" (download it from the competition's
+Data tab, or with a Kaggle API token), passed as:  --massey path/to/MMasseyOrdinals.csv
+plus the same folder's MTeams.csv and MTeamSpellings.csv for team names.
 """
 
 from __future__ import annotations
@@ -72,8 +77,51 @@ def espn_seeds(dates: list[str]) -> dict[str, int]:
     return seeds
 
 
+# Massey ordinal system codes -> our column names (codes verified against ESPN's own numbers).
+MASSEY_SYSTEMS = {"NET": "net", "POM": "kenpom", "EBP": "bpi", "ESR": "sor", "KPK": "kpi"}
+SELECTION_DAYNUM = 133  # Kaggle day number of the final pre-tournament rankings
+
+
+def massey_ranks(path: Path, matcher: TeamMatcher) -> dict[tuple[int, str], dict[str, int]]:
+    """(season, ESPN id) -> {column: rank} using each system's last ranking on/before Selection Sunday."""
+    folder = path.parent
+    spell: dict[str, list[str]] = {}
+    with (folder / "MTeams.csv").open() as f:
+        for r in csv.DictReader(f):
+            spell.setdefault(r["TeamID"], []).append(r["TeamName"])
+    with (folder / "MTeamSpellings.csv").open(encoding="latin-1") as f:
+        for r in csv.DictReader(f):
+            spell.setdefault(r["TeamID"], []).append(r["TeamNameSpelling"])
+    espn_of = {}
+    for tid, names in spell.items():
+        for n in names:
+            found = matcher.find(n)
+            if found:
+                espn_of[tid] = found
+                break
+    best: dict[tuple, tuple[int, int]] = {}
+    with path.open() as f:
+        reader = csv.reader(f)
+        next(reader)
+        for season, day, system, tid, rank in reader:
+            season, day = int(season), int(day)
+            if system not in MASSEY_SYSTEMS or season not in SELECTION_SUNDAYS or day > SELECTION_DAYNUM:
+                continue
+            key = (season, tid, system)
+            if day >= best.get(key, (-1, 0))[0]:
+                best[key] = (day, int(rank))
+    out: dict[tuple[int, str], dict[str, int]] = {}
+    for (season, tid, system), (_, rank) in best.items():
+        if tid in espn_of:
+            out.setdefault((season, espn_of[tid]), {})[MASSEY_SYSTEMS[system]] = rank
+    log(f"Massey ordinals: {len(espn_of)} Kaggle teams matched, {len(out)} team-seasons")
+    return out
+
+
 def main() -> int:
+    massey_path = Path(sys.argv[sys.argv.index("--massey") + 1]) if "--massey" in sys.argv else None
     matcher = TeamMatcher(load_espn_teams())
+    massey = massey_ranks(massey_path, matcher) if massey_path else {}
     rows_out = []
     for year, date in SELECTION_SUNDAYS.items():
         snap = torvik_snapshot(date)
@@ -91,6 +139,8 @@ def main() -> int:
                 "year": year, "team": r[1], "espn_id": matcher.find(r[1]) or "", "conf": r[2],
                 "record": r[3], "trank": int(r[0]), "wab": round(float(r[41]), 2), "wab_rank": int(r[42]),
                 "seed": seed or "",
+                **{col: massey.get((year, matcher.find(r[1]) or ""), {}).get(col, "")
+                   for col in MASSEY_SYSTEMS.values()},
             })
         log(f"{year}: {len(snap)} teams, {n_seeded} seeded")
         if n_seeded < 64:

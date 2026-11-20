@@ -521,9 +521,11 @@ async function renderBracket() {
     <p class="page-sub">The projected ${b.fieldSize}-team field if the season ended today.</p>
     <div class="notice">
       <b>How it works:</b> the model learned from ${b.seasons.length} tournaments (${b.seasons[0]}–${b.seasons[b.seasons.length - 1]})
-      how teams' <b>Wins Above Bubble</b> and <b>Torvik</b> rankings on Selection Sunday turned into bids and seeds.
-      Tested on past seasons, it picked <b>${bt.atLargePicked} of ${bt.atLargeTotal}</b> at-large teams correctly and had seeds within
-      one line <b>${bt.seedWithin1Pct}%</b> of the time (exact ${bt.seedExactPct}%).
+      how teams' rankings on Selection Sunday turned into bids and seeds. It picks the field using
+      <b>${b.selectUses.join(" + ")}</b> and seeds it using <b>${b.seedUses.join(" + ")}</b>${b.seedUses.includes("NET") ? "" : " (NET joins once it's released)"}.
+      Tested on the ${bt.seasons.length} past tournaments where all of those were available, it picked
+      <b>${bt.atLargePicked} of ${bt.atLargeTotal}</b> at-large teams correctly and had seeds within one line
+      <b>${bt.seedWithin1Pct}%</b> of the time (exact ${bt.seedExactPct}%).
       Conference champions (AQ) are projected as the league leader. It's noisy early in the season and sharpens by March.
     </div>
     <div class="bracket-layout">
@@ -546,19 +548,30 @@ async function renderBracket() {
     </div>
     <section class="card guide-card">
       <div class="card-head"><span>What a Ranking Has Meant on Selection Sunday</span></div>
-      <div class="table-wrap"><table class="guide">
-        <thead>
-          <tr><th rowspan="2">Rank</th><th colspan="2" class="c">Wins Above Bubble</th><th colspan="2" class="c">Torvik</th></tr>
-          <tr><th class="c">Made field</th><th class="c">Avg seed</th><th class="c">Made field</th><th class="c">Avg seed</th></tr>
-        </thead>
-        <tbody>${b.guide.map((g) => `<tr><td class="num">${g.range}</td>
-          <td class="num c">${g.wab.inField ?? "—"}%</td><td class="num c"><b>${g.wab.avgSeed ?? "—"}</b></td>
-          <td class="num c">${g.torvik.inField ?? "—"}%</td><td class="num c"><b>${g.torvik.avgSeed ?? "—"}</b></td></tr>`).join("")}
-        </tbody>
-      </table></div>
-      <div class="empty">Example: teams ranked 5–8 in WAB on Selection Sunday have all made the field, with an average seed of
-        ${b.guide[1].wab.avgSeed}. Based on ${b.seasons.length} tournaments.</div>
+      <div class="guide-tabs" role="tablist">
+        <button class="on" data-mode="avgSeed">Average seed</button><button data-mode="inField">Made the field</button>
+      </div>
+      <div class="table-wrap"><table class="guide" id="guide"></table></div>
+      <div class="empty" id="guide-note"></div>
     </section>`;
+  const systems = Object.keys(b.guide[0]).filter((k) => k !== "range");
+  const drawGuide = (mode) => {
+    document.getElementById("guide").innerHTML = `
+      <thead><tr><th>Rank</th>${systems.map((sy) => `<th class="c">${sy}</th>`).join("")}</tr></thead>
+      <tbody>${b.guide.map((g) => `<tr><td class="num">${g.range}</td>${systems.map((sy) => {
+        const v = g[sy][mode];
+        return `<td class="num c">${v == null ? "—" : mode === "inField" ? v + "%" : `<b>${v}</b>`}</td>`;
+      }).join("")}</tr>`).join("")}</tbody>`;
+    document.getElementById("guide-note").innerHTML = mode === "avgSeed"
+      ? `Example: teams ranked 5–8 by KenPom on Selection Sunday got an average seed of ${b.guide[1].KenPom.avgSeed}; by NET, ${b.guide[1].NET.avgSeed}.
+         NET exists since ${b.guideSeasons.NET[0]}; SOR is missing a few early seasons; the rest go back to ${b.seasons[0]}.`
+      : `Share of teams in each ranking range that made the tournament (automatic or at-large bid).`;
+  };
+  app.querySelectorAll(".guide-tabs button").forEach((btn) => btn.addEventListener("click", () => {
+    app.querySelectorAll(".guide-tabs button").forEach((x) => x.classList.toggle("on", x === btn));
+    drawGuide(btn.dataset.mode);
+  }));
+  drawGuide("avgSeed");
 }
 
 boot().catch((e) => {

@@ -361,9 +361,13 @@ def build_bracket(teams_out: list[dict]) -> dict:
     """Projected seed list + bubble watch. Also adds projSeed/bidChance to each team."""
     import bracket_model as bm
 
-    model = bm.train(bm.load_history())
+    hist = bm.load_history()
     eligible = [t for t in teams_out if t.get("wabRank") and t.get("trank")]
-    rows = [{"id": t["id"], "conf": t["conf"], "wab_rank": t["wabRank"], "trank": t["trank"]} for t in eligible]
+    rows = [{"id": t["id"], "conf": t["conf"], "wab_rank": t["wabRank"], "trank": t["trank"],
+             "net": t.get("net"), "sor": t.get("sor")} for t in eligible]
+    # Use a seeding ranking only once it's out for (nearly) every team, e.g. NET from December.
+    seed_feats = [f for f in bm.SEED_FEATURES if sum(1 for r in rows if r.get(f)) >= 300]
+    model = bm.train(hist, bm.SELECT_FEATURES, seed_feats)
 
     # Projected automatic qualifier per conference: best conference record once league play
     # has started, otherwise the best Torvik team. Independents have no automatic bid.
@@ -385,13 +389,16 @@ def build_bracket(teams_out: list[dict]) -> dict:
         by_id[r["id"]]["bidChance"] = round(r["chance"], 3)
     for r in field:
         by_id[r["id"]]["projSeed"] = r["seed"]
-    hist = bm.load_history()
+    labels = {"wab_rank": "WAB", "trank": "Torvik", "net": "NET", "sor": "SOR"}
     return {
         "fieldSize": bm.FIELD_SIZE,
         "field": [slim(r) for r in field],
         "bubble": {k: [{"id": r["id"], "chance": round(r["chance"], 3)} for r in v] for k, v in bubble.items()},
-        "backtest": bm.backtest(hist),
+        "selectUses": [labels[f] for f in bm.SELECT_FEATURES],
+        "seedUses": [labels[f] for f in seed_feats],
+        "backtest": bm.backtest(hist, bm.SELECT_FEATURES, seed_feats),
         "guide": bm.guide(hist),
+        "guideSeasons": bm.guide_seasons(hist),
         "seasons": sorted({r["year"] for r in hist}),
     }
 

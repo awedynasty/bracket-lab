@@ -15,11 +15,18 @@ Python standard library.
   `scripts/team_aliases.json`. Watch the updater's log for "unmatched".
 - Quads use NET once the current season's NET is published; until then BPI rank.
   Cutoffs are in `QUAD_CUTOFFS`. `quad: 0` means a non-D1 opponent.
-- Bracketology: `scripts/bracket_model.py` (stdlib logistic + linear regression on
-  ln(WAB rank) and ln(Torvik rank)) trains nightly on `scripts/history/selection_sunday.csv`
-  and writes `docs/data/bracket.json`. After each tournament, add the new Selection Sunday
-  (and ESPN seed dates) to `scripts/build_bracket_history.py` and rerun it. KenPom is skipped.
-  NET/SOR/BPI aren't in the model because no Selection Sunday history exists for them.
+- Bracketology: `scripts/bracket_model.py` (stdlib logistic + linear regression on log ranks)
+  trains nightly on `scripts/history/selection_sunday.csv` and writes `docs/data/bracket.json`.
+  Selection uses WAB + Torvik; seeding uses WAB + Torvik + NET + SOR (NET drops out until
+  it's released each December). Backtests showed BPI/KenPom/KPI don't help picks; KenPom/KPI
+  help seeding slightly but have no free daily feed, so they're only in the guide table.
+- History file: `scripts/build_bracket_history.py --massey <MMasseyOrdinals.csv>`. Torvik
+  rank/WAB from Torvik time-machine files; seeds from cbbdata (<=2025) and ESPN (2026+);
+  NET/KenPom/BPI/SOR/KPI from Kaggle March Machine Learning Mania `MMasseyOrdinals.csv`
+  (codes NET, POM, EBP, ESR, KPK). The owner's Kaggle token is saved as a network secret
+  for www.kaggle.com: download with
+  `curl -L https://www.kaggle.com/api/v1/competitions/data/download/march-machine-learning-mania-<year>/MMasseyOrdinals.csv`
+  (also MTeams.csv, MTeamSpellings.csv). Rerun once a year after the tournament.
 - `docs/data/history/<date>.json` is a daily ranking snapshot (incl. NET/SOR/BPI), saved so
   those metrics can join the model in future seasons. Don't delete it.
 - Front end: `docs/index.html`, `docs/app.js` (hash routes `#/`, `#/team/<id>`, `#/margin`, `#/compare/<id>/<id>`, `#/bracket`),

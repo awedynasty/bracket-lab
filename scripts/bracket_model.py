@@ -5,10 +5,15 @@ rankings translated into (a) getting an at-large bid and (b) their seed, then
 applies that to this season's rankings to build a projected 68-team seed list
 and a bubble watch.
 
-Features are *ranks*, not raw values, so they compare fairly in mid-season,
-when raw numbers like Wins Above Bubble are still small:
-  * WAB rank     - Wins Above Bubble, a results-based metric on the committee's team sheet
-  * Torvik rank  - T-Rank, a predictive metric on the committee's team sheet
+Features are log *ranks*, not raw values, so they compare fairly in mid-season,
+when raw numbers like Wins Above Bubble are still small.
+
+Backtests on 2019-2026 picked these sets (see SELECT_FEATURES / SEED_FEATURES):
+  * Who gets an at-large bid: WAB + Torvik. Adding NET, SOR, BPI, KenPom or KPI
+    didn't pick any more teams correctly.
+  * Seeding: WAB + Torvik + NET + SOR (exact seed 49% -> 52%, within one line 87% -> 89%).
+    KenPom/KPI help seeding by about one more point, but there's no free daily feed for
+    them, so they only appear in the historical guide.
 """
 
 from __future__ import annotations
@@ -24,8 +29,15 @@ FIRST_FOUR_AT_LARGE = 4   # last four at-large teams in play in the First Four
 FIRST_FOUR_AUTO = 4       # lowest four automatic qualifiers play in the First Four (16 seeds)
 
 
-def features(wab_rank, trank):
-    return [math.log(max(1, wab_rank)), math.log(max(1, trank))]
+SELECT_FEATURES = ["wab_rank", "trank"]
+SEED_FEATURES = ["wab_rank", "trank", "net", "sor"]
+GUIDE_SYSTEMS = [("wab_rank", "WAB"), ("trank", "Torvik"), ("net", "NET"), ("sor", "SOR"),
+                 ("kenpom", "KenPom"), ("bpi", "BPI"), ("kpi", "KPI")]
+MISSING_RANK = 360  # stand-in for a team with no rank in a system
+
+
+def features(row, feats):
+    return [math.log(max(1, row.get(f) or MISSING_RANK)) for f in feats]
 
 
 # --------------------------------------------------------------------------- #
@@ -90,11 +102,11 @@ def load_history():
     rows = []
     with HISTORY.open() as f:
         for r in csv.DictReader(f):
-            rows.append({
-                "year": int(r["year"]), "team": r["team"], "conf": r["conf"],
-                "trank": int(r["trank"]), "wab_rank": int(r["wab_rank"]),
-                "seed": int(r["seed"]) if r["seed"] else None,
-            })
+            row = {"year": int(r["year"]), "team": r["team"], "conf": r["conf"],
+                   "seed": int(r["seed"]) if r["seed"] else None}
+            for key, _ in GUIDE_SYSTEMS:
+                row[key] = int(r[key]) if r.get(key) else None
+            rows.append(row)
     return rows
 
 
@@ -110,33 +122,34 @@ def auto_bids_in_history(year_rows):
     return {max(v, key=lambda r: (r["seed"], r["wab_rank"]))["team"] for v in by_conf.values()}
 
 
-def train(rows):
+def train(rows, select_feats=SELECT_FEATURES, seed_feats=SEED_FEATURES):
+    """Fits the selection model on select_feats and the seeding model on seed_feats.
+    Seasons missing a feature (e.g. NET before 2019) are left out of that model."""
     sel_x, sel_y, seed_x, seed_y = [], [], [], []
     for year in sorted({r["year"] for r in rows}):
         yr = [r for r in rows if r["year"] == year]
         autos = auto_bids_in_history(yr)
         for r in yr:
-            x = features(r["wab_rank"], r["trank"])
-            if r["seed"]:
-                seed_x.append(x)
+            if r["seed"] and all(r.get(f) for f in seed_feats):
+                seed_x.append(features(r, seed_feats))
                 seed_y.append(r["seed"])
-            if r["team"] not in autos:
-                sel_x.append(x)
+            if r["team"] not in autos and all(r.get(f) for f in select_feats):
+                sel_x.append(features(r, select_feats))
                 sel_y.append(1 if r["seed"] else 0)
-    return {"select": fit_logistic(sel_x, sel_y), "seed": fit_linear(seed_x, seed_y)}
+    return {"select": fit_logistic(sel_x, sel_y), "seed": fit_linear(seed_x, seed_y),
+            "selectFeatures": list(select_feats), "seedFeatures": list(seed_feats)}
 
 
 # --------------------------------------------------------------------------- #
 # Projection
 # --------------------------------------------------------------------------- #
 def project(teams, model, auto_ids):
-    """teams: list of dicts with id, conf, wab_rank, trank.
+    """teams: list of dicts with id, conf and the model's rank columns.
     auto_ids: the projected automatic qualifier for each conference.
     Returns (field, bubble) where field is the ordered seed list."""
     for t in teams:
-        x = features(t["wab_rank"], t["trank"])
-        t["chance"] = prob(model["select"], x)
-        t["seedScore"] = _dot(model["seed"], x)
+        t["chance"] = prob(model["select"], features(t, model["selectFeatures"]))
+        t["seedScore"] = _dot(model["seed"], features(t, model["seedFeatures"]))
 
     autos = [t for t in teams if t["id"] in auto_ids]
     n_at_large = FIELD_SIZE - len(autos)
@@ -183,11 +196,15 @@ def project(teams, model, auto_ids):
 # --------------------------------------------------------------------------- #
 # Backtest + historical guide
 # --------------------------------------------------------------------------- #
-def backtest(rows):
-    """Leave one season out: train on the others, predict that season's field."""
+def backtest(rows, select_feats=SELECT_FEATURES, seed_feats=SEED_FEATURES):
+    """Leave one season out: train on the others, predict that season's field.
+    Only seasons with every feature available are tested."""
+    feats = set(select_feats) | set(seed_feats)
+    years = [y for y in sorted({r["year"] for r in rows})
+             if sum(1 for r in rows if r["year"] == y and r["seed"] and all(r.get(f) for f in feats)) >= 60]
     picked = total = seed_exact = seed_within1 = n_seed = 0
-    for year in sorted({r["year"] for r in rows}):
-        model = train([r for r in rows if r["year"] != year])
+    for year in years:
+        model = train([r for r in rows if r["year"] != year], select_feats, seed_feats)
         yr = [dict(r, id=r["team"]) for r in rows if r["year"] == year]
         autos = auto_bids_in_history(yr)
         real_seed = {r["team"]: r["seed"] for r in yr}
@@ -203,7 +220,7 @@ def backtest(rows):
                 seed_exact += t["seed"] == real
                 seed_within1 += abs(t["seed"] - real) <= 1
     return {
-        "seasons": len({r["year"] for r in rows}),
+        "seasons": years,
         "atLargePicked": picked, "atLargeTotal": total,
         "seedExactPct": round(100 * seed_exact / n_seed),
         "seedWithin1Pct": round(100 * seed_within1 / n_seed),
@@ -211,14 +228,14 @@ def backtest(rows):
 
 
 def guide(rows):
-    """For rank buckets, the share of teams that made the field and their average seed."""
+    """For rank buckets in each system: share of teams that made the field, and their average seed."""
     buckets = [(1, 4), (5, 8), (9, 12), (13, 16), (17, 20), (21, 25), (26, 30), (31, 35),
                (36, 40), (41, 45), (46, 50), (51, 60), (61, 75), (76, 100)]
     out = []
     for lo, hi in buckets:
         row = {"range": f"{lo}–{hi}"}
-        for key, label in (("wab_rank", "wab"), ("trank", "torvik")):
-            grp = [r for r in rows if lo <= r[key] <= hi]
+        for key, label in GUIDE_SYSTEMS:
+            grp = [r for r in rows if r.get(key) and lo <= r[key] <= hi]
             seeds = [r["seed"] for r in grp if r["seed"]]
             row[label] = {
                 "inField": round(100 * len(seeds) / len(grp)) if grp else None,
@@ -228,9 +245,13 @@ def guide(rows):
     return out
 
 
+def guide_seasons(rows):
+    """Which seasons each guide column is based on."""
+    return {label: sorted({r["year"] for r in rows if r.get(key) and r["seed"]}) for key, label in GUIDE_SYSTEMS}
+
+
 if __name__ == "__main__":
     hist = load_history()
     print("model:", train(hist))
     print("backtest:", backtest(hist))
-    for g in guide(hist):
-        print(g)
+    print("old model backtest:", backtest(hist, SELECT_FEATURES, ["wab_rank", "trank"]))
