@@ -24,6 +24,10 @@ Sunday (WAB, Torvik, NET, SOR, plus KenPom, BPI and KPI for the history table) t
 a bid and a seed. Once a year, after the
 tournament, add that season to `scripts/build_bracket_history.py` and rerun it (or ask Claude to).
 
+**Projections** play out the rest of the season 5,000 times every night, using a win chance
+for each remaining game. That powers each team's "Projected Finish" card, the win % next to
+upcoming games, and the "Projected Selection Sunday" toggle on the Bracketology page.
+
 ## One-time setup
 
 1. **Add your SportsDataIO key:** repo **Settings → Secrets and variables → Actions →

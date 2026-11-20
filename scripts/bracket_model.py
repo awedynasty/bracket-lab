@@ -143,12 +143,14 @@ def train(rows, select_feats=SELECT_FEATURES, seed_feats=SEED_FEATURES):
 # --------------------------------------------------------------------------- #
 # Projection
 # --------------------------------------------------------------------------- #
-def project(teams, model, auto_ids):
+def project(teams, model, auto_ids, given_chance=False):
     """teams: list of dicts with id, conf and the model's rank columns.
     auto_ids: the projected automatic qualifier for each conference.
+    given_chance: use each team's existing "chance" (e.g. simulated odds) to pick at-large teams.
     Returns (field, bubble) where field is the ordered seed list."""
     for t in teams:
-        t["chance"] = prob(model["select"], features(t, model["selectFeatures"]))
+        if not given_chance:
+            t["chance"] = prob(model["select"], features(t, model["selectFeatures"]))
         t["seedScore"] = _dot(model["seed"], features(t, model["seedFeatures"]))
 
     autos = [t for t in teams if t["id"] in auto_ids]

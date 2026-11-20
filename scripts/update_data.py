@@ -278,10 +278,20 @@ def load_torvik(matcher: TeamMatcher, season_year: int) -> dict[str, dict]:
             missed.append(r["team"])
             continue
         wab = r.get("WAB")
+        def num(key):
+            try:
+                return round(float(r[key]), 2)
+            except (KeyError, TypeError, ValueError):
+                return None
+
         out[espn_id] = {
             "trank": to_int(r.get("rank")),
             "wab": round(float(wab), 1) if wab not in (None, "") else None,
             "wabRank": to_int(r.get("WAB Rk")),
+            # Adjusted offense/defense (points per 100 possessions) and tempo, used to predict games.
+            "adjO": num("adjoe"),
+            "adjD": num("adjde"),
+            "tempo": num("adjt"),
         }
     log(f"Torvik: {len(out)} teams" + (f", unmatched: {missed}" if missed else ""))
     return out
@@ -403,6 +413,49 @@ def build_bracket(teams_out: list[dict]) -> dict:
     }
 
 
+def project_season(teams_out: list[dict], games_by_team: dict[str, list[dict]]) -> dict:
+    """Simulate the rest of the season; adds team["proj"] and each upcoming game's winProb."""
+    import bracket_model as bm
+    import simulate as sm
+
+    ready = [t for t in teams_out if t.get("adjO") and t.get("trank") and t.get("wab") is not None]
+    if len(ready) < 300:
+        log("Projection: Torvik ratings missing - skipping")
+        return {}
+    predictor = sm.Predictor(teams_out)
+    # Future NET/SOR can't be projected (formulas aren't public), so the projection seeds on
+    # projected WAB + Torvik, the rankings we can play forward.
+    model = bm.train(bm.load_history(), bm.SELECT_FEATURES, ["wab_rank", "trank"])
+    proj, field, bubble, games = sm.simulate(teams_out, games_by_team, predictor, bm, model)
+    check = sm.calibrate(teams_out, games_by_team, sm.Predictor)
+
+    for t in teams_out:
+        p = proj.get(t["id"])
+        if not p:
+            continue
+        # Expected final quad records: current record + win chance of each remaining game.
+        q = {k: list(v) for k, v in t["quads"].items()}
+        for g in games_by_team[t["id"]]:
+            if not g["final"] and g.get("quad") is not None and g.get("winProb") is not None:
+                q[str(g["quad"])][0] += g["winProb"]
+                q[str(g["quad"])][1] += 1 - g["winProb"]
+        p["quads"] = {k: [round(v[0], 1), round(v[1], 1)] for k, v in q.items()}
+        t["proj"] = p
+
+    slim = lambda r: {k: r[k] for k in ("id", "seed", "overall", "bid", "firstFour")} | {"chance": round(r["chance"], 3)}  # noqa: E731
+    log(f"Projection: {sm.N_SIMS} simulated seasons, {len(games)} remaining games; "
+        f"game model {check['accuracy']:.1%} right on {check['games']} finished games")
+    return {
+        "sims": sm.N_SIMS,
+        "remainingGames": len(games),
+        "gameAccuracy": check["accuracy"],
+        "gamesChecked": check["games"],
+        "seedUses": ["WAB", "Torvik"],
+        "field": [slim(r) for r in field],
+        "bubble": {k: [{"id": r["id"], "chance": round(r["chance"], 3)} for r in v] for k, v in bubble.items()},
+    }
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "team").mkdir(exist_ok=True)
@@ -427,6 +480,8 @@ def main() -> int:
         schedules = dict(zip(ids, pool.map(load_schedule, ids)))
 
     teams_out = []
+    games_by_team: dict[str, list[dict]] = {}
+    rosters: dict[str, list[dict]] = {}
     for t in sorted(espn_teams, key=lambda x: x["location"]):
         tid = t["id"]
         s = sdio.get(tid, {})
@@ -486,9 +541,14 @@ def main() -> int:
             "arena": s.get("arena"),
         }
         teams_out.append(team)
-        (OUT / "team" / f"{tid}.json").write_text(json.dumps({"id": tid, "games": games, "roster": s.get("roster", [])}, separators=(",", ":")))
+        games_by_team[tid] = games
+        rosters[tid] = s.get("roster", [])
 
     bracket = build_bracket(teams_out)
+    bracket["projected"] = project_season(teams_out, games_by_team)
+    for tid, games in games_by_team.items():
+        (OUT / "team" / f"{tid}.json").write_text(
+            json.dumps({"id": tid, "games": games, "roster": rosters[tid]}, separators=(",", ":")))
     (OUT / "bracket.json").write_text(json.dumps(bracket, separators=(",", ":")))
 
     meta = {
@@ -496,6 +556,7 @@ def main() -> int:
         "season": f"{season_start.year}-{str(season_start.year + 1)[-2:]}",
         "quadSource": rank_source,
         "netAsOf": net_as_of,
+        "sims": (bracket.get("projected") or {}).get("sims"),
         "teams": teams_out,
     }
     (OUT / "teams.json").write_text(json.dumps(meta, separators=(",", ":")))

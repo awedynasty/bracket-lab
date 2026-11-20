@@ -329,3 +329,32 @@ td.c, th.c { text-align: center; }
   .seed-teams { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .seed-num { width: 40px; font-size: 22px; }
 }
+
+/* Win chance chips for upcoming games */
+.chip.P { width: auto; min-width: 34px; padding: 0 4px; font-size: 11px; }
+.chip.P.hi { background: var(--win-bg); color: var(--win); }
+.chip.P.mid { background: var(--amber-bg); color: var(--amber); }
+.chip.P.lo { background: var(--loss-bg); color: var(--loss); }
+.games td.res { width: 42px; }
+
+/* Projected finish card */
+.proj td { padding: 6px 14px; }
+.seed-odds { display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; padding: 6px 14px 0; height: 76px; }
+.seed-odds .so { display: flex; flex-direction: column; align-items: stretch; min-width: 0; }
+.seed-odds .bar-wrap { flex: 1; display: flex; align-items: flex-end; }
+.seed-odds .bar { width: 100%; background: color-mix(in srgb, var(--amber) 45%, transparent); border-radius: 3px 3px 0 0; min-height: 1px; }
+.seed-odds .bar.best { background: var(--amber); }
+.seed-odds .lab { text-align: center; font-size: 10px; color: var(--muted); padding-top: 2px; }
+
+/* Today / Projected toggle */
+.mode-toggle {
+  display: inline-flex; background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+  padding: 3px; margin: 6px 0 10px; max-width: 100%;
+}
+.mode-toggle button {
+  font: 600 13px/1 Inter, sans-serif; color: var(--muted); background: transparent; border: 0; cursor: pointer;
+  padding: 9px 14px; border-radius: 999px; white-space: nowrap;
+}
+.mode-toggle button.on { background: var(--navy); color: #fff; box-shadow: inset 0 -2px 0 var(--amber); }
+@media (prefers-color-scheme: dark) { .mode-toggle button.on { background: var(--amber); color: #111827; box-shadow: none; } }
+@media (max-width: 480px) { .mode-toggle button { padding: 8px 10px; font-size: 12px; } }

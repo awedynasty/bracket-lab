@@ -30,6 +30,12 @@ Python standard library.
   for www.kaggle.com: download with
   `curl -L https://www.kaggle.com/api/v1/competitions/data/download/march-machine-learning-mania-<year>/MMasseyOrdinals.csv`
   (also MTeams.csv, MTeamSpellings.csv). Rerun once a year after the tournament.
+- Projection: `scripts/simulate.py` gives every remaining game a win chance from Torvik
+  adjO/adjD/tempo (+3 pts home edge, margin SD 11) and plays the season out N_SIMS=5000 times,
+  recomputing WAB (bubble team = Torvik #60 strength, which matches Torvik's published WAB),
+  conference champions and the bracket model each run. Output: `team.proj` in teams.json,
+  `winProb` on upcoming games, and `bracket.json` -> `projected` (the "Projected Selection
+  Sunday" toggle). Conference tournaments aren't simulated; auto bids = regular-season champ.
 - `docs/data/history/<date>.json` is a daily ranking snapshot (incl. NET/SOR/BPI), saved so
   those metrics can join the model in future seasons. Don't delete it.
 - Front end: `docs/index.html`, `docs/app.js` (hash routes `#/`, `#/team/<id>`, `#/margin`, `#/compare/<id>/<id>`, `#/bracket`),

@@ -4,7 +4,7 @@
 //         #/team/<id>   -> one team's resume
 //         #/margin      -> margin of defeat (points lost by, and who to)
 //         #/compare/<id>/<id> -> two teams side by side
-//         #/bracket     -> projected seed list + bubble watch (data/bracket.json)
+//         #/bracket     -> seed list + bubble watch, today or projected (data/bracket.json)
 
 const state = { meta: null, byId: {}, sort: null, search: "", conf: "", modTop: "50", modConf: "" };
 const app = document.getElementById("app");
@@ -22,6 +22,13 @@ const logo = (t, cls = "logo") => t && t.logo
   ? `<picture>${cls === "logo" && t.logo.includes("/500/") ? `<source srcset="${esc(t.logo.replace("/500/", "/500-dark/"))}" media="(prefers-color-scheme: dark)">` : ""}<img class="${cls}" src="${esc(t.logo)}" alt="" loading="lazy"></picture>`
   : `<span class="${cls} blank"></span>`;
 const rankVal = (v) => (v == null ? "—" : v);
+// Projected records are averages over thousands of simulated seasons; show them as whole games.
+const projRec = (w, l) => { const W = Math.round(w), G = Math.round(w + l); return `${W}-${G - W}`; };
+const pctText = (x) => (x == null ? "—" : x >= 0.995 ? ">99%" : x > 0 && x < 0.005 ? "<1%" : `${Math.round(x * 100)}%`);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
 const qrec = (t, q) => rec(...t.quads[q]);
 
 function rankSourceLabel() {
@@ -36,6 +43,7 @@ async function boot() {
   state.sort = { key: state.meta.quadSource === "NET" ? "net" : "bpiRank", dir: 1 };
   document.getElementById("meta").innerHTML =
     `${esc(state.meta.season)} season<br>Updated ${esc(state.meta.updated)}`;
+  state.meta.sims = state.meta.sims || 5000;
   window.addEventListener("hashchange", route);
   route();
 }
@@ -79,6 +87,7 @@ const COLUMNS = [
     key: "q" + q, label: "Q" + q, c: true, desc: q <= 2,
     get: (t) => t.quads[q][0] * 100 - t.quads[q][1], show: (t) => qrec(t, q),
   })),
+  { key: "bid", label: "Bid %", c: true, desc: true, get: (t) => t.proj?.inField, show: (t) => pctText(t.proj?.inField) },
 ];
 
 function renderHome() {
@@ -195,7 +204,9 @@ async function renderTeam(id) {
       ${tile("Wins Above Bubble", t.wabRank, t.wab != null ? `${t.wab > 0 ? "+" : ""}${t.wab} wins` : "")}
       ${tile("SOS", t.sos)}
       ${tile("Non-Con SOS", t.ncsos)}
-      ${tile("Proj. Seed", t.projSeed, t.projSeed ? `<a href="#/bracket">Bracketology</a>` : t.bidChance != null ? `${Math.round(t.bidChance * 100)}% bid odds` : "")}
+      ${t.proj
+        ? tile("Proj. Seed", t.proj.projSeed ?? null, t.proj.projSeed ? `${pctText(t.proj.inField)} to make it` : `${pctText(t.proj.inField)} bid odds`)
+        : tile("Seed Today", t.projSeed, t.bidChance != null ? `${pctText(t.bidChance)} bid odds` : "")}
     </div>
 
     <div class="layout">
@@ -205,6 +216,7 @@ async function renderTeam(id) {
         ${rosterCard(roster)}
       </div>
       <div class="side">
+        ${projCard(t)}
         ${listCard("Last 5 Games", last5, "No games played yet.")}
         ${listCard("Next 5 Games", next5, "No games left on the schedule.")}
         ${standingsCard(t, confTeams)}
@@ -220,6 +232,33 @@ async function renderTeam(id) {
     tr.addEventListener("click", () => { location.hash = `#/team/${tr.dataset.id}`; }));
 }
 
+function projCard(t) {
+  const p = t.proj;
+  if (!p) return "";
+  const best = p.seedOdds.indexOf(Math.max(...p.seedOdds));
+  const max = Math.max(...p.seedOdds, 0.01);
+  const row = (label, value) => `<tr><td>${label}</td><td class="num c"><b>${value}</b></td></tr>`;
+  return `<section class="card">
+    <div class="card-head"><span>Projected Finish</span><a class="dim-head" href="#/bracket" style="color:inherit">Bracketology →</a></div>
+    <table class="bubble proj"><tbody>
+      ${row("Record", projRec(p.wins, p.losses))}
+      ${row("Conference", projRec(p.confWins, p.confLosses))}
+      ${row("Wins Above Bubble", `${p.wab > 0 ? "+" : ""}${p.wab} <span class="dim">(#${p.wabRank})</span>`)}
+      ${row(`${esc(t.confShort)} regular-season title`, pctText(p.confTitle))}
+      ${row("Makes the NCAA Tournament", pctText(p.inField))}
+      ${p.inField >= 0.005 ? row("Most likely seed", `${best + 1} <span class="dim">(${pctText(p.seedOdds[best])})</span>`) : ""}
+    </tbody></table>
+    ${p.inField >= 0.005 ? `<div class="seed-odds" aria-label="Chance of each seed">
+      ${p.seedOdds.map((x, i) => `<div class="so" title="${i + 1} seed: ${pctText(x)}">
+        <div class="bar-wrap"><div class="bar ${i === best ? "best" : ""}" style="height:${Math.round((x / max) * 100)}%"></div></div>
+        <div class="lab">${i + 1}</div></div>`).join("")}
+    </div>` : ""}
+    <div class="empty">From ${bracketSims()} simulated seasons using each game's win chance. Seeds 1–16, taller = more likely.</div>
+  </section>`;
+}
+
+function bracketSims() { return (state.meta.sims || 5000).toLocaleString(); }
+
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"], v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
@@ -229,7 +268,10 @@ function gameRow(g) {
   const opp = state.byId[g.oppId];
   const name = opp ? `<a href="#/team/${opp.id}">${esc(opp.name)}</a>` : `<span>${esc(g.oppName)}</span>`;
   const rk = g.oppRank ? `<span class="rk">${rankSourceLabel()} ${g.oppRank}</span>` : "";
-  const res = g.final ? `<span class="chip ${g.result}">${g.result}</span>` : `<span class="chip U">–</span>`;
+  const wp = g.winProb;
+  const res = g.final ? `<span class="chip ${g.result}">${g.result}</span>`
+    : wp != null ? `<span class="chip P ${wp >= 0.6 ? "hi" : wp <= 0.4 ? "lo" : "mid"}" title="Chance to win">${Math.min(99, Math.max(1, Math.round(wp * 100)))}%</span>`
+    : `<span class="chip U">–</span>`;
   const right = g.final ? g.score : (g.time || "TBD");
   return `<tr class="${g.final ? "" : "upcoming"}">
     <td class="res">${res}</td>
@@ -262,12 +304,15 @@ function standingsCard(t, confTeams) {
   return `<section class="card">
     <div class="card-head"><span>${esc(t.conf)} Standings</span></div>
     <table class="standings">
-      <thead><tr><th>Team</th><th class="c">Conf</th><th class="c">Overall</th></tr></thead>
+      <thead><tr><th>Team</th><th class="c">Conf</th><th class="c">Overall</th>
+        <th class="c" title="Projected final conference record">Proj</th><th class="c" title="Chance to win or share the regular-season title">Title</th></tr></thead>
       <tbody>${confTeams.map((x) => `
         <tr class="${x.id === t.id ? "me" : ""}" data-id="${x.id}">
           <td><span class="team-cell">${logo(x)}${esc(x.name)}</span></td>
           <td class="num c">${rec(x.confWins, x.confLosses)}</td>
           <td class="num c">${rec(x.wins, x.losses)}</td>
+          <td class="num c dim">${x.proj ? projRec(x.proj.confWins, x.proj.confLosses) : "—"}</td>
+          <td class="num c dim">${x.proj ? pctText(x.proj.confTitle) : "—"}</td>
         </tr>`).join("")}
       </tbody>
     </table>
@@ -492,12 +537,17 @@ async function renderBracket() {
   }
   const b = bracketData, bt = b.backtest;
   const T = (id) => state.byId[id];
+  const hasProj = !!(b.projected && b.projected.field);
+  const mode = hasProj && (store.get("bracketMode") || "today") === "projected" ? "projected" : "today";
+  const view = mode === "projected" ? b.projected : b;
+  const P = mode === "projected";
   const lines = [];
-  for (const r of b.field) (lines[r.seed] ||= []).push(r);
+  for (const r of view.field) (lines[r.seed] ||= []).push(r);
 
   const chip = (r) => {
     const t = T(r.id);
-    return `<a class="seed-team" href="#/team/${t.id}" title="${esc(t.name)} · ${esc(t.conf)} · ${rec(t.wins, t.losses)}">
+    const recText = P && t.proj ? `projected ${projRec(t.proj.wins, t.proj.losses)}` : rec(t.wins, t.losses);
+    return `<a class="seed-team" href="#/team/${t.id}" title="${esc(t.name)} · ${esc(t.conf)} · ${recText}${P ? ` · ${pctText(r.chance)} to make the field` : ""}">
       ${logo(t)}<span class="nm">${esc(t.name)}</span>
       ${r.bid === "auto" ? `<span class="tag aq" title="Projected conference champion (automatic bid)">AQ</span>` : ""}
       ${r.firstFour ? `<span class="tag ff" title="Plays in the First Four">FF</span>` : ""}
@@ -507,21 +557,33 @@ async function renderBracket() {
     <div class="card-head"><span>${title}</span></div>
     <table class="bubble"><tbody>${list.map((r) => { const t = T(r.id); return `<tr>
       <td><a class="team-cell" href="#/team/${t.id}" style="text-decoration:none">${logo(t)}${esc(t.name)}</a></td>
-      <td class="num c">${rec(t.wins, t.losses)}</td>
-      <td class="num c dim" title="Wins Above Bubble rank">WAB ${rankVal(t.wabRank)}</td>
+      <td class="num c" title="${P ? "Projected final record" : "Record"}">${P && t.proj ? projRec(t.proj.wins, t.proj.losses) : rec(t.wins, t.losses)}</td>
+      <td class="num c dim" title="${P ? "Projected final " : ""}Wins Above Bubble rank">WAB ${rankVal(P && t.proj ? t.proj.wabRank : t.wabRank)}</td>
       <td class="num c dim" title="Torvik rank">TRK ${rankVal(t.trank)}</td>
       <td class="num c odds">${pct(r.chance)}</td></tr>`; }).join("")}</tbody></table>
     ${note ? `<div class="empty">${note}</div>` : ""}
   </section>`;
 
   const confBids = {};
-  for (const r of b.field) { const c = T(r.id).confShort; confBids[c] = (confBids[c] || 0) + 1; }
+  for (const r of view.field) { const c = T(r.id).confShort; confBids[c] = (confBids[c] || 0) + 1; }
   const multi = Object.entries(confBids).filter(([, n]) => n > 1).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]));
 
   app.innerHTML = `
     <h1 class="page-title">Bracketology</h1>
-    <p class="page-sub">The projected ${b.fieldSize}-team field if the season ended today.</p>
-    <div class="notice">
+    ${hasProj ? `<div class="mode-toggle" role="tablist" aria-label="Projection mode">
+      <button role="tab" data-mode="today" class="${P ? "" : "on"}" aria-selected="${!P}">If the season ended today</button>
+      <button role="tab" data-mode="projected" class="${P ? "on" : ""}" aria-selected="${P}">Projected Selection Sunday</button>
+    </div>` : ""}
+    <p class="page-sub">${P ? `The most likely ${b.fieldSize}-team field after the rest of the season plays out.`
+      : `The projected ${b.fieldSize}-team field if the season ended today.`}</p>
+    ${P ? `<div class="notice">
+      <b>How it works:</b> every remaining game (${b.projected.remainingGames.toLocaleString()} of them) gets a win chance from Torvik's
+      offense, defense and tempo ratings plus home court. That game model called <b>${Math.round(b.projected.gameAccuracy * 100)}%</b>
+      of this season's ${b.projected.gamesChecked.toLocaleString()} finished games correctly. The season is then played out
+      <b>${b.projected.sims.toLocaleString()} times</b>; each run recalculates Wins Above Bubble, crowns conference champions
+      and runs the bracket model. Percentages are how often a team made the field. Seeding uses projected WAB + Torvik
+      (future NET and SOR can't be projected). Conference tournaments aren't simulated yet, so auto bids go to the likeliest regular-season champion.
+    </div>` : `<div class="notice">
       <b>How it works:</b> the model learned from ${b.seasons.length} tournaments (${b.seasons[0]}–${b.seasons[b.seasons.length - 1]})
       how teams' rankings on Selection Sunday turned into bids and seeds. It picks the field using
       <b>${b.selectUses.join(" + ")}</b> and seeds it using <b>${b.seedUses.join(" + ")}</b>${b.seedUses.includes("NET") ? "" : " (NET joins once it's released)"}.
@@ -529,7 +591,7 @@ async function renderBracket() {
       <b>${bt.atLargePicked} of ${bt.atLargeTotal}</b> at-large teams correctly and had seeds within one line
       <b>${bt.seedWithin1Pct}%</b> of the time (exact ${bt.seedExactPct}%).
       Conference champions (AQ) are projected as the league leader. It's noisy early in the season and sharpens by March.
-    </div>
+    </div>`}
     <div class="bracket-layout">
       <section class="card">
         <div class="card-head"><span>Seed List</span><span class="dim-head">AQ = auto bid · FF = First Four</span></div>
@@ -538,10 +600,12 @@ async function renderBracket() {
         </div>
       </section>
       <div class="side">
-        ${bubbleCard("Last Four Byes", b.bubble.lastFourByes)}
-        ${bubbleCard("Last Four In", b.bubble.lastFourIn)}
-        ${bubbleCard("First Four Out", b.bubble.firstFourOut)}
-        ${bubbleCard("Next Four Out", b.bubble.nextFourOut, "% = how often teams ranked like this got an at-large bid in past seasons.")}
+        ${bubbleCard("Last Four Byes", view.bubble.lastFourByes)}
+        ${bubbleCard("Last Four In", view.bubble.lastFourIn)}
+        ${bubbleCard("First Four Out", view.bubble.firstFourOut)}
+        ${bubbleCard("Next Four Out", view.bubble.nextFourOut, P
+          ? "% = share of simulated seasons in which the team made the field."
+          : "% = how often teams ranked like this got an at-large bid in past seasons.")}
         <section class="card">
           <div class="card-head"><span>Multi-Bid Conferences</span></div>
           <table class="bubble"><tbody>${multi.map(([c, n]) => `<tr><td>${esc(c)}</td><td class="num c">${n}</td></tr>`).join("")}</tbody></table>
@@ -574,6 +638,10 @@ async function renderBracket() {
     drawGuide(btn.dataset.mode);
   }));
   drawGuide("avgSeed");
+  app.querySelectorAll(".mode-toggle button").forEach((btn) => btn.addEventListener("click", () => {
+    store.set("bracketMode", btn.dataset.mode);
+    renderBracket();
+  }));
 }
 
 boot().catch((e) => {
