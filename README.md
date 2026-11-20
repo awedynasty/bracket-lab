@@ -30,7 +30,7 @@ tournament, add that season to `scripts/build_bracket_history.py` and rerun it (
    New repository secret**. Name it `SPORTSDATA_KEY` and paste the key as the value.
 2. **Turn on the website:** **Settings → Pages**. Under "Build and deployment," pick
    **Deploy from a branch**, branch **main**, folder **/docs**, then Save. The site appears at
-   `https://<your-username>.github.io/hoops-resume/` within a few minutes.
+   https://awedynasty.github.io/bracket-lab/ within a few minutes.
 3. **Allow the nightly job to save data:** **Settings → Actions → General → Workflow
    permissions**, choose **Read and write permissions**, then Save.
 

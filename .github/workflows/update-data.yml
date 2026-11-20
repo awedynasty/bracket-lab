@@ -30,7 +30,7 @@ jobs:
 
       - name: Save data to the repo (the site redeploys automatically)
         run: |
-          git config user.name "hoops-resume-bot"
+          git config user.name "bracket-lab-bot"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/data
           if git diff --cached --quiet; then

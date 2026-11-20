@@ -45,7 +45,7 @@ ESPN_SEED_DATES = {2026: ["20260317", "20260318", "20260319", "20260320"]}
 
 def torvik_snapshot(date: str) -> list[list]:
     url = f"https://barttorvik.com/timemachine/team_results/{date}_team_results.json.gz"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (hoops-resume)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (bracket-lab)"})
     raw = urllib.request.urlopen(req, timeout=60).read()
     try:
         raw = gzip.decompress(raw)

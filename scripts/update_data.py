@@ -70,7 +70,7 @@ def log(msg: str) -> None:
 
 
 def fetch(url: str, *, as_json: bool = True, headers: dict | None = None, tries: int = 4):
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (hoops-resume)", **(headers or {})})
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (bracket-lab)", **(headers or {})})
     for attempt in range(tries):
         try:
             with urllib.request.urlopen(req, timeout=40) as r:
