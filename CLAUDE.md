@@ -40,6 +40,8 @@ Python standard library.
   those metrics can join the model in future seasons. Don't delete it.
 - Front end: `docs/index.html`, `docs/app.js` (hash routes `#/`, `#/team/<id>`, `#/margin`, `#/compare/<id>/<id>`, `#/bracket`),
   `docs/style.css` (colors are CSS variables at the top, with dark mode).
+- After changing `docs/app.js` or `docs/style.css`, bump the `?v=` version on both in
+  `docs/index.html` so phones don't keep serving the old cached files.
 - Test: run the updater with `SPORTSDATA_KEY` set, serve `docs/` with
   `python3 -m http.server`, and check a team page at desktop and phone widths.
 - Don't commit API keys. The key lives in the `SPORTSDATA_KEY` GitHub Actions secret.
