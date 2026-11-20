@@ -3,6 +3,7 @@
 // Pages:  #/            -> every team, sortable
 //         #/team/<id>   -> one team's resume
 //         #/margin      -> margin of defeat (points lost by, and who to)
+//         #/compare/<id>/<id> -> two teams side by side
 
 const state = { meta: null, byId: {}, sort: null, search: "", conf: "", modTop: "50", modConf: "" };
 const app = document.getElementById("app");
@@ -38,9 +39,11 @@ async function boot() {
 
 function route() {
   const m = location.hash.match(/^#\/team\/(\w+)/);
-  const page = m ? "team" : location.hash.startsWith("#/margin") ? "margin" : "home";
+  const c = location.hash.match(/^#\/compare(?:\/(\w*))?(?:\/(\w*))?/);
+  const page = m ? "team" : c ? "compare" : location.hash.startsWith("#/margin") ? "margin" : "home";
   document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.nav === page));
   if (m && state.byId[m[1]]) renderTeam(m[1]);
+  else if (c) renderCompare(c[1], c[2]);
   else if (page === "margin") renderMargin();
   else renderHome();
   window.scrollTo(0, 0);
@@ -162,6 +165,7 @@ async function renderTeam(id) {
       <select id="pick-conf" aria-label="Conference">${confs.map((c) => `<option ${c === t.conf ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
       <select id="pick-team" aria-label="School">${confTeams.slice().sort((a, b) => a.name.localeCompare(b.name))
         .map((x) => `<option value="${x.id}" ${x.id === id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>
+      <a class="btn" href="#/compare/${id}/">Compare with…</a>
     </div>
 
     <section class="hero" style="--team:${esc(color)}">
@@ -341,6 +345,132 @@ function drawMargin() {
                  : `<span class="loss">${inner}</span>`;
       }).join("") : `<span class="dim">Undefeated</span>`}</td>
     </tr>`).join("") || `<tr><td class="empty" colspan="5">No teams match.</td></tr>`}</tbody>`;
+}
+
+// ---------- compare two teams ----------
+// Each metric: how to read it, how to show it, and whether lower or higher is better.
+const COMPARE_ROWS = [
+  { group: "Record" },
+  { label: "Overall", show: (t) => rec(t.wins, t.losses), val: (t) => winPct(t.wins, t.losses), better: "high" },
+  { label: "Conference", show: (t) => rec(t.confWins, t.confLosses), val: (t) => winPct(t.confWins, t.confLosses), better: "high" },
+  { group: "Rankings" },
+  { label: "AP Poll", val: (t) => t.ap, better: "low" },
+  { label: "NET", val: (t) => t.net, better: "low" },
+  { label: "BPI", val: (t) => t.bpiRank, better: "low" },
+  { label: "Torvik", val: (t) => t.trank, better: "low" },
+  { label: "Strength of Record", val: (t) => t.sor, better: "low" },
+  { label: "Wins Above Bubble", val: (t) => t.wabRank, better: "low",
+    show: (t) => t.wabRank == null ? "—" : `${t.wabRank} <span class="dim">(${t.wab > 0 ? "+" : ""}${t.wab})</span>` },
+  { label: "Strength of Schedule", val: (t) => t.sos, better: "low" },
+  { label: "Non-Con SOS", val: (t) => t.ncsos, better: "low" },
+  { group: "Resume" },
+  ...[1, 2].map((q) => ({ label: `Quad ${q}`, show: (t) => qrec(t, q), val: (t) => t.quads[q][0], better: "high" })),
+  ...[3, 4].map((q) => ({ label: `Quad ${q}`, show: (t) => qrec(t, q), val: (t) => t.quads[q][1], better: "low" })),
+  { label: "Margin of Defeat", val: (t) => t.marginOfDefeat, better: "low",
+    show: (t) => `${t.marginOfDefeat} <span class="dim">(${t.losses} L)</span>` },
+];
+
+function winPct(w, l) { return w + l ? w / (w + l) : null; }
+
+function teamSelect(id, selected) {
+  const confs = [...new Set(state.meta.teams.map((t) => t.conf))].sort();
+  return `<select id="${id}" aria-label="Team">
+    <option value="">Pick a team…</option>
+    ${confs.map((c) => `<optgroup label="${esc(c)}">${state.meta.teams.filter((t) => t.conf === c)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => `<option value="${t.id}" ${t.id === selected ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</optgroup>`).join("")}
+  </select>`;
+}
+
+async function renderCompare(aId, bId) {
+  const a = state.byId[aId], b = state.byId[bId];
+  document.title = a && b ? `${a.name} vs ${b.name} · Hoops Resume` : "Compare · Hoops Resume";
+  const pickers = `
+    <h1 class="page-title">Compare Teams</h1>
+    <div class="compare-pick">
+      ${teamSelect("cmp-a", aId)}<span class="vs">vs</span>${teamSelect("cmp-b", bId)}
+    </div>`;
+  const wire = () => {
+    const go = () => {
+      const x = document.getElementById("cmp-a").value, y = document.getElementById("cmp-b").value;
+      location.hash = `#/compare/${x}/${y}`;
+    };
+    document.getElementById("cmp-a").addEventListener("change", go);
+    document.getElementById("cmp-b").addEventListener("change", go);
+  };
+  if (!a || !b) {
+    app.innerHTML = `${pickers}<p class="page-sub">Pick two teams to see their resumes side by side.</p>`;
+    wire();
+    return;
+  }
+  app.innerHTML = `${pickers}<p class="loading">Loading…</p>`;
+  wire();
+  const [ga, gb] = await Promise.all([a, b].map(async (t) =>
+    (await (await fetch(`data/team/${t.id}.json`, { cache: "no-cache" })).json()).games));
+  if (!location.hash.startsWith(`#/compare/${aId}/${bId}`)) return;
+
+  let edgeA = 0, edgeB = 0;
+  const rows = COMPARE_ROWS.map((r) => {
+    if (r.group) return `<tr class="grp"><td colspan="3">${r.group}</td></tr>`;
+    const va = r.val(a), vb = r.val(b);
+    let wa = false, wb = false;
+    if (va != null && vb != null && va !== vb) {
+      const aBetter = r.better === "low" ? va < vb : va > vb;
+      wa = aBetter; wb = !aBetter;
+      aBetter ? edgeA++ : edgeB++;
+    }
+    const show = (t, v) => r.show ? r.show(t) : (v ?? "—");
+    return `<tr>
+      <td class="num side-a ${wa ? "better" : ""}">${show(a, va)}</td>
+      <td class="metric">${r.label}</td>
+      <td class="num side-b ${wb ? "better" : ""}">${show(b, vb)}</td>
+    </tr>`;
+  }).join("");
+
+  // Head-to-head and common opponents
+  const h2h = ga.filter((g) => g.oppId === b.id);
+  const finalsB = {};
+  for (const g of gb) if (g.final) (finalsB[g.oppId] ||= []).push(g);
+  const common = [];
+  for (const g of ga) {
+    if (!g.final || g.oppId === b.id || !finalsB[g.oppId]) continue;
+    common.push([g, finalsB[g.oppId]]);
+  }
+  const res = (g) => `<span class="chip ${g.result}">${g.result}</span> <span class="num">${g.score}</span> <span class="dim">${LOC[g.loc]} ${fmtDate(g.date)}</span>`;
+  const head = (t) => `<a class="cmp-team" href="#/team/${t.id}" style="--team:#${esc(t.color || "0b1d4a")}">
+      ${logo(t, "cmp-logo")}<div><div class="cmp-name">${esc(t.name)}</div>
+      <div class="cmp-sub">${rec(t.wins, t.losses)} · ${esc(t.confShort)}</div></div></a>`;
+
+  app.innerHTML = `${pickers}
+    ${state.meta.quadSource === "NET" ? "" : quadNotice()}
+    <div class="cmp-heads">${head(a)}<div class="cmp-edge num"><b>${edgeA}</b><span>edges</span><b>${edgeB}</b></div>${head(b)}</div>
+    <div class="compare-grid">
+      <section class="card"><table class="cmp">
+        <tbody>${rows}</tbody>
+      </table><div class="empty">Green marks the better number. Quads 1–2 are judged on wins, Quads 3–4 on losses.</div></section>
+      <div class="side">
+        <section class="card">
+          <div class="card-head"><span>Head to Head</span></div>
+          ${h2h.length ? `<table class="games"><tbody>${h2h.map((g) => {
+            const where = g.loc === "N" ? "Neutral site" : g.loc === "H" ? `at ${esc(a.name)}` : `at ${esc(b.name)}`;
+            if (!g.final) return `<tr class="upcoming"><td>${fmtDate(g.date)}</td><td>${where}</td><td>${esc(g.time || "TBD")}</td></tr>`;
+            const [x, y] = g.score.split("-");
+            const w = g.result === "W" ? a : b;
+            return `<tr><td>${fmtDate(g.date)}</td><td><span class="opp">${logo(w)}<b>${esc(w.name)}</b>&nbsp;won <span class="num">${Math.max(x, y)}-${Math.min(x, y)}</span></span></td><td class="dim">${where}</td></tr>`;
+          }).join("")}</tbody></table>`
+          : `<div class="empty">They haven't played this season and aren't scheduled to.</div>`}
+        </section>
+        <section class="card">
+          <div class="card-head"><span>Common Opponents</span><span class="rec num">${common.length}</span></div>
+          ${common.length ? `<table class="games common"><thead><tr><th>Opponent</th><th>${esc(a.abbr)}</th><th>${esc(b.abbr)}</th></tr></thead><tbody>
+            ${common.map(([g, bs]) => { const o = state.byId[g.oppId]; return `<tr>
+              <td><span class="opp">${logo(o)}${o ? `<a href="#/team/${o.id}">${esc(o.name)}</a>` : esc(g.oppName)}</span></td>
+              <td>${res(g)}</td><td>${bs.map(res).join("<br>")}</td></tr>`; }).join("")}
+          </tbody></table>` : `<div class="empty">No common opponents yet.</div>`}
+        </section>
+      </div>
+    </div>`;
+  wire();
 }
 
 boot().catch((e) => {

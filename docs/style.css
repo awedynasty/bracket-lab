@@ -239,3 +239,51 @@ td.c, th.c { text-align: center; }
   .nav { margin-left: 8px; }
   .nav a { padding: 6px 8px; font-size: 13px; }
 }
+
+/* Compare */
+.btn {
+  text-decoration: none; font-weight: 500; color: var(--ink);
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px;
+}
+.btn:hover { border-color: var(--muted); }
+.compare-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 16px; }
+.compare-pick select {
+  font: inherit; color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; flex: 1 1 200px; min-width: 0; max-width: 320px;
+}
+.compare-pick .vs { color: var(--muted); font-weight: 600; }
+.cmp-heads { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch; margin-bottom: 16px; }
+.cmp-team {
+  --team: #0b1d4a; background: var(--team); color: #fff; text-decoration: none;
+  border-radius: var(--radius); padding: 14px 16px; display: flex; align-items: center; gap: 14px; min-width: 0;
+}
+.cmp-heads .cmp-team:last-child { flex-direction: row-reverse; text-align: right; }
+.cmp-logo { width: 60px; height: 60px; object-fit: contain; background: #fff; border-radius: 50%; padding: 6px; flex: none; }
+.cmp-name { font: 700 28px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.cmp-sub { opacity: .9; margin-top: 4px; }
+.cmp-edge { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0 6px; }
+.cmp-edge b { font: 700 26px/1 "Barlow Condensed", sans-serif; }
+.cmp-edge span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.compare-grid { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px; align-items: start; }
+.cmp td { padding: 8px 14px; font-size: 14px; }
+.cmp td.metric { text-align: center; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; width: 40%; }
+.cmp td.side-a { text-align: right; width: 30%; }
+.cmp td.side-b { text-align: left; width: 30%; }
+.cmp td.better { font-weight: 700; color: var(--win); }
+.cmp tr.grp td { background: var(--navy); color: #fff; font: 600 15px/1 "Barlow Condensed", sans-serif; letter-spacing: .4px; text-transform: uppercase; text-align: center; padding: 8px; }
+.cmp tbody tr:nth-child(even) { background: var(--row-alt); }
+.games.common th { font-size: 11px; color: var(--muted); text-transform: uppercase; padding: 6px 8px; text-align: left; }
+.games.common td { white-space: nowrap; vertical-align: top; }
+@media (max-width: 1000px) { .compare-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 700px) {
+  .cmp-heads { grid-template-columns: 1fr 1fr; }
+  .compare-pick .vs { display: none; }
+  .compare-pick select { flex-basis: 100%; max-width: none; }
+  .cmp-edge { grid-column: 1 / -1; grid-row: 2; flex-direction: row; gap: 10px; }
+  .cmp-team, .cmp-heads .cmp-team:last-child { flex-direction: column; text-align: center; padding: 12px 8px; gap: 8px; }
+  .cmp-name { font-size: 20px; }
+  .cmp-logo { width: 48px; height: 48px; }
+  .cmp td { padding: 7px 8px; font-size: 13px; }
+  .cmp td.metric { font-size: 11px; }
+  .games.common { display: block; overflow-x: auto; }
+}

@@ -450,6 +450,14 @@ def main() -> int:
         "teams": teams_out,
     }
     (OUT / "teams.json").write_text(json.dumps(meta, separators=(",", ":")))
+
+    # Daily snapshot of every team's rankings, kept for the future bracket-projection model.
+    hist = OUT / "history"
+    hist.mkdir(exist_ok=True)
+    snap_keys = ("wins", "losses", "ap", "net", "bpiRank", "sor", "trank", "wab", "wabRank", "sos", "ncsos", "quads")
+    snapshot = {"date": dt.datetime.now(EASTERN).date().isoformat(), "quadSource": rank_source,
+                "teams": {t["id"]: {k: t[k] for k in snap_keys} for t in teams_out}}
+    (hist / f"{snapshot['date']}.json").write_text(json.dumps(snapshot, separators=(",", ":")))
     log(f"Wrote {len(teams_out)} teams to {OUT}")
     return 0
 

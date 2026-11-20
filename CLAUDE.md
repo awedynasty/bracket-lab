@@ -15,7 +15,9 @@ Python standard library.
   `scripts/team_aliases.json`. Watch the updater's log for "unmatched".
 - Quads use NET once the current season's NET is published; until then BPI rank.
   Cutoffs are in `QUAD_CUTOFFS`. `quad: 0` means a non-D1 opponent.
-- Front end: `docs/index.html`, `docs/app.js` (hash routes `#/`, `#/team/<id>`, `#/margin`),
+- `docs/data/history/<date>.json` is a daily ranking snapshot, saved for a future
+  bracket-projection model (historical rank -> seed). Don't delete it.
+- Front end: `docs/index.html`, `docs/app.js` (hash routes `#/`, `#/team/<id>`, `#/margin`, `#/compare/<id>/<id>`),
   `docs/style.css` (colors are CSS variables at the top, with dark mode).
 - Test: run the updater with `SPORTSDATA_KEY` set, serve `docs/` with
   `python3 -m http.server`, and check a team page at desktop and phone widths.
