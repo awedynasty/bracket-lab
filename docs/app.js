@@ -2,8 +2,9 @@
 // Reads data/teams.json (all teams) and data/team/<id>.json (one team's games).
 // Pages:  #/            -> every team, sortable
 //         #/team/<id>   -> one team's resume
+//         #/margin      -> margin of defeat (points lost by, and who to)
 
-const state = { meta: null, byId: {}, sort: null, search: "", conf: "" };
+const state = { meta: null, byId: {}, sort: null, search: "", conf: "", modTop: "50", modConf: "" };
 const app = document.getElementById("app");
 
 const QUAD_NAMES = { 1: "Quad 1", 2: "Quad 2", 3: "Quad 3", 4: "Quad 4", 0: "Non-D1" };
@@ -37,7 +38,10 @@ async function boot() {
 
 function route() {
   const m = location.hash.match(/^#\/team\/(\w+)/);
+  const page = m ? "team" : location.hash.startsWith("#/margin") ? "margin" : "home";
+  document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.nav === page));
   if (m && state.byId[m[1]]) renderTeam(m[1]);
+  else if (page === "margin") renderMargin();
   else renderHome();
   window.scrollTo(0, 0);
 }
@@ -130,7 +134,9 @@ async function renderTeam(id) {
   const t = state.byId[id];
   document.title = `${t.name} · Hoops Resume`;
   app.innerHTML = `<p class="loading">Loading ${esc(t.name)}…</p>`;
-  const games = (await (await fetch(`data/team/${id}.json`, { cache: "no-cache" })).json()).games;
+  const detail = await (await fetch(`data/team/${id}.json`, { cache: "no-cache" })).json();
+  const games = detail.games;
+  const roster = detail.roster || [];
   if (location.hash !== `#/team/${id}`) return; // user navigated away while loading
 
   const confTeams = state.meta.teams.filter((x) => x.conf === t.conf)
@@ -163,6 +169,7 @@ async function renderTeam(id) {
         <div class="sub">${esc(t.mascot)} · ${esc(t.conf)}</div>
         <div class="sub"><b class="num">${rec(t.wins, t.losses)}</b> overall ·
           <b class="num">${rec(t.confWins, t.confLosses)}</b> conference · ${ordinal(place)} in ${esc(t.confShort)}</div>
+        ${t.arena ? `<div class="sub">${esc(t.arena.name)}${t.arena.city ? ` · ${esc(t.arena.city)}` : ""}${t.arena.capacity ? ` · capacity ${t.arena.capacity.toLocaleString()}` : ""}</div>` : ""}
       </div>
     </section>
 
@@ -181,6 +188,7 @@ async function renderTeam(id) {
       <div class="quads">
         ${[1, 2, 3, 4].map((q) => quadCard(q, t, games)).join("")}
         ${games.some((g) => g.quad === 0) ? quadCard(0, t, games) : ""}
+        ${rosterCard(roster)}
       </div>
       <div class="side">
         ${listCard("Last 5 Games", last5, "No games played yet.")}
@@ -250,6 +258,85 @@ function standingsCard(t, confTeams) {
       </tbody>
     </table>
   </section>`;
+}
+
+function rosterCard(roster) {
+  if (!roster.length) return "";
+  const ht = (inches) => (inches ? `${Math.floor(inches / 12)}'${inches % 12}"` : "");
+  const cls = (c) => ({ Freshman: "Fr", Sophomore: "So", Junior: "Jr", Senior: "Sr", "Graduate Student": "Gr" }[c] || c || "");
+  return `<section class="card full">
+    <div class="card-head"><span>Roster</span><span class="rec num">${roster.length}</span></div>
+    <div class="roster-wrap"><table class="roster">
+      <thead><tr><th class="c">#</th><th>Name</th><th class="c">Pos</th><th class="c">Class</th><th class="c">Ht</th><th class="c">Wt</th><th>Hometown</th></tr></thead>
+      <tbody>${roster.map((p) => `<tr>
+        <td class="jersey num">${p.num ?? ""}</td>
+        <td>${esc(p.name)}</td>
+        <td class="c">${esc(p.pos)}</td>
+        <td class="c">${esc(cls(p.cls))}</td>
+        <td class="c num">${ht(p.ht)}</td>
+        <td class="c num">${p.wt ?? ""}</td>
+        <td class="dim">${esc(p.home)}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>
+  </section>`;
+}
+
+// ---------- margin of defeat ----------
+function rankOf(t) {
+  return state.meta.quadSource === "NET" ? t.net : t.bpiRank;
+}
+
+function renderMargin() {
+  document.title = "Margin of Defeat · Hoops Resume";
+  const confs = [...new Set(state.meta.teams.map((t) => t.conf))].sort();
+  const src = rankSourceLabel();
+  app.innerHTML = `
+    <h1 class="page-title">Margin of Defeat</h1>
+    <p class="page-sub">Total points each team has lost by this season, and who beat them. Lower is better.</p>
+    <div class="controls">
+      <select id="mod-top" aria-label="Teams to show">
+        ${[["25", `${src} top 25`], ["50", `${src} top 50`], ["100", `${src} top 100`], ["all", "All teams"]]
+          .map(([v, l]) => `<option value="${v}" ${v === state.modTop ? "selected" : ""}>${l}</option>`).join("")}
+      </select>
+      <select id="mod-conf" aria-label="Conference">
+        <option value="">All conferences</option>
+        ${confs.map((c) => `<option ${c === state.modConf ? "selected" : ""}>${esc(c)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="card"><div class="table-wrap"><table class="mod" id="mod"></table></div></div>`;
+  document.getElementById("mod-top").addEventListener("change", (e) => { state.modTop = e.target.value; drawMargin(); });
+  document.getElementById("mod-conf").addEventListener("change", (e) => { state.modConf = e.target.value; drawMargin(); });
+  drawMargin();
+}
+
+function drawMargin() {
+  const top = state.modTop === "all" ? Infinity : +state.modTop;
+  const rows = state.meta.teams
+    .filter((t) => (!state.modConf || t.conf === state.modConf) && (rankOf(t) ?? Infinity) <= top)
+    .sort((a, b) => a.marginOfDefeat - b.marginOfDefeat || (rankOf(a) ?? 999) - (rankOf(b) ?? 999));
+  const max = Math.max(1, ...rows.map((t) => t.marginOfDefeat));
+  const mid = max / 2;
+  // green (small margin) -> neutral -> red (big margin)
+  const heat = (v) => {
+    const pct = Math.round(Math.min(1, Math.abs(v - mid) / mid) * 55);
+    return `background: color-mix(in srgb, ${v <= mid ? "var(--win)" : "var(--loss)"} ${pct}%, transparent)`;
+  };
+  const table = document.getElementById("mod");
+  table.innerHTML = `
+    <thead><tr><th>Team</th><th class="c">W-L</th><th class="c">${rankSourceLabel()}</th><th class="c">Margin</th><th>Lost To</th></tr></thead>
+    <tbody>${rows.map((t) => `<tr>
+      <td><a class="team-cell" href="#/team/${t.id}" style="text-decoration:none">${logo(t)}${esc(t.name)}</a></td>
+      <td class="num c">${rec(t.wins, t.losses)}</td>
+      <td class="num c">${rankVal(rankOf(t))}</td>
+      <td class="num heat" style="${heat(t.marginOfDefeat)}">${t.marginOfDefeat}</td>
+      <td class="lost">${t.lostTo.length ? t.lostTo.map((l) => {
+        const o = state.byId[l.oppId];
+        const name = esc(o ? o.name : l.oppName);
+        const inner = `${o ? logo(o) : ""}<span>${name}</span><span class="by">−${l.by}</span>`;
+        return o ? `<a class="loss" href="#/team/${o.id}" title="${fmtDate(l.date)} ${LOC[l.loc]} ${name}">${inner}</a>`
+                 : `<span class="loss">${inner}</span>`;
+      }).join("") : `<span class="dim">Undefeated</span>`}</td>
+    </tr>`).join("") || `<tr><td class="empty" colspan="5">No teams match.</td></tr>`}</tbody>`;
 }
 
 boot().catch((e) => {

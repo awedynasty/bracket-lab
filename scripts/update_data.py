@@ -36,7 +36,7 @@ ALIASES = json.loads((Path(__file__).parent / "team_aliases.json").read_text())
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball"
 ESPN_BPI = "https://site.web.api.espn.com/apis/fitt/v3/sports/basketball/mens-college-basketball/powerindex?limit=500"
 NET_URL = "https://www.ncaa.com/rankings/basketball-men/d1/ncaa-mens-basketball-net-rankings"
-SDIO = "https://api.sportsdata.io/v3/cbb/scores/json/LeagueHierarchy"
+SDIO = "https://api.sportsdata.io/v3/cbb/scores/json"
 EASTERN = ZoneInfo("America/New_York")
 
 # NCAA quadrant cutoffs: the opponent's rank must be <= the number to fall in
@@ -146,16 +146,30 @@ def load_espn_teams() -> list[dict]:
 
 
 def load_sportsdata(matcher: TeamMatcher) -> dict[str, dict]:
-    """SportsDataIO team info keyed by ESPN id."""
+    """SportsDataIO team info, home arena and roster, keyed by ESPN id."""
     key = os.environ.get("SPORTSDATA_KEY", "").strip()
     if not key:
         log("SportsDataIO: SPORTSDATA_KEY not set - skipping (conferences fall back to ESPN)")
         return {}
+    auth = {"Ocp-Apim-Subscription-Key": key}
     try:
-        conferences = fetch(SDIO, headers={"Ocp-Apim-Subscription-Key": key})
+        conferences = fetch(f"{SDIO}/LeagueHierarchy", headers=auth)
     except Exception as e:  # keep the site updating even if the key expires
         log(f"SportsDataIO: request failed ({e}) - skipping")
         return {}
+
+    def optional(endpoint):
+        try:
+            return fetch(f"{SDIO}/{endpoint}", headers=auth)
+        except Exception as e:
+            log(f"SportsDataIO {endpoint}: request failed ({e}) - skipping")
+            return []
+
+    stadiums = {s["StadiumID"]: s for s in optional("Stadiums")}
+    rosters: dict[int, list] = {}
+    for p in optional("PlayersByActive"):
+        rosters.setdefault(p.get("TeamID"), []).append(p)
+
     out, missed = {}, []
     for conf in conferences:
         for t in conf.get("Teams", []):
@@ -165,6 +179,7 @@ def load_sportsdata(matcher: TeamMatcher) -> dict[str, dict]:
             if not espn_id:
                 missed.append(t["School"])
                 continue
+            arena = stadiums.get((t.get("Stadium") or {}).get("StadiumID")) or t.get("Stadium")
             out[espn_id] = {
                 "conf": conf["Name"],
                 "ap": t.get("ApRank"),
@@ -174,8 +189,26 @@ def load_sportsdata(matcher: TeamMatcher) -> dict[str, dict]:
                 "confLosses": t.get("ConferenceLosses"),
                 "color": t.get("PrimaryColor"),
                 "altColor": t.get("SecondaryColor"),
+                "arena": {
+                    "name": arena.get("Name"),
+                    "city": ", ".join(x for x in (arena.get("City"), arena.get("State")) if x),
+                    "capacity": arena.get("Capacity"),
+                } if arena else None,
+                "roster": [
+                    {
+                        "num": p.get("Jersey"),
+                        "name": f"{p.get('FirstName', '')} {p.get('LastName', '')}".strip(),
+                        "pos": p.get("Position"),
+                        "cls": p.get("Class"),
+                        "ht": p.get("Height"),
+                        "wt": p.get("Weight"),
+                        "home": ", ".join(x for x in (p.get("BirthCity"), p.get("BirthState")) if x),
+                    }
+                    for p in sorted(rosters.get(t["TeamID"], []), key=lambda p: (p.get("Jersey") is None, p.get("Jersey") or 0))
+                ],
             }
-    log(f"SportsDataIO: matched {len(out)} teams" + (f", unmatched: {missed}" if missed else ""))
+    log(f"SportsDataIO: matched {len(out)} teams, {len(stadiums)} stadiums, "
+        f"{sum(len(v['roster']) for v in out.values())} players" + (f", unmatched: {missed}" if missed else ""))
     return out
 
 
@@ -339,6 +372,7 @@ def main() -> int:
 
         quads = {str(q): [0, 0] for q in range(5)}
         wins = losses = 0
+        lost_to = []
         for g in games:
             if not g["final"]:
                 continue
@@ -347,6 +381,10 @@ def main() -> int:
             losses += not won
             if g["quad"] is not None:
                 quads[str(g["quad"])][0 if won else 1] += 1
+            if not won and re.fullmatch(r"\d+-\d+", g["score"]):
+                my, their = (int(x) for x in g["score"].split("-"))
+                lost_to.append({"oppId": g["oppId"], "oppName": g["oppName"], "by": their - my,
+                                "date": g["date"], "loc": g["loc"]})
 
         logo = next((l["href"] for l in t.get("logos", []) if "default" in l.get("rel", [])), None)
         team = {
@@ -368,9 +406,12 @@ def main() -> int:
             "net": net.get(tid),
             **b,
             "quads": quads,
+            "lostTo": lost_to,
+            "marginOfDefeat": sum(x["by"] for x in lost_to),
+            "arena": s.get("arena"),
         }
         teams_out.append(team)
-        (OUT / "team" / f"{tid}.json").write_text(json.dumps({"id": tid, "games": games}, separators=(",", ":")))
+        (OUT / "team" / f"{tid}.json").write_text(json.dumps({"id": tid, "games": games, "roster": s.get("roster", [])}, separators=(",", ":")))
 
     meta = {
         "updated": dt.datetime.now(EASTERN).strftime("%Y-%m-%d %I:%M %p ET"),

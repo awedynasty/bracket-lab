@@ -60,6 +60,13 @@ a { color: inherit; }
   letter-spacing: .5px; text-transform: uppercase; text-decoration: none;
 }
 .brand span { color: #ff5a6e; }
+.nav { display: flex; gap: 4px; margin-right: auto; margin-left: 16px; }
+.nav a {
+  text-decoration: none; font-weight: 500; font-size: 14px;
+  padding: 6px 10px; border-radius: 6px; opacity: .8;
+}
+.nav a:hover { opacity: 1; background: rgba(255,255,255,.08); }
+.nav a.active { opacity: 1; background: rgba(255,255,255,.14); }
 .topbar-meta { font-size: 12px; opacity: .8; text-align: right; }
 
 main { max-width: 1280px; margin: 0 auto; padding: 20px 16px 40px; }
@@ -206,3 +213,29 @@ td.c, th.c { text-align: center; }
 .standings td { font-size: 13px; padding: 5px 10px; }
 .standings tr.me { background: color-mix(in srgb, var(--accent) 14%, transparent) !important; font-weight: 600; }
 .standings tr { cursor: pointer; }
+
+/* Margin of Defeat */
+.mod td.heat { font-weight: 600; text-align: center; min-width: 70px; }
+.mod td.lost { white-space: normal; min-width: 280px; line-height: 1.6; }
+.mod .loss {
+  display: inline-flex; align-items: center; gap: 4px; margin: 1px 10px 1px 0;
+  text-decoration: none; white-space: nowrap;
+}
+.mod .loss:hover span:first-of-type { text-decoration: underline; }
+.mod .loss .by { color: var(--loss); font-size: 12px; font-variant-numeric: tabular-nums; }
+.mod .logo { width: 18px; height: 18px; }
+.page-title { font: 700 30px/1.1 "Barlow Condensed", sans-serif; text-transform: uppercase; margin: 0 0 4px; }
+.page-sub { color: var(--muted); margin: 0 0 14px; }
+
+/* Roster */
+.roster-wrap { overflow-x: auto; }
+.roster td { font-size: 13px; padding: 6px 10px; }
+.roster td.jersey { font-weight: 700; color: var(--muted); width: 36px; text-align: right; }
+.full { grid-column: 1 / -1; }
+
+@media (max-width: 700px) {
+  .topbar { flex-wrap: wrap; }
+  .topbar-meta { display: none; }
+  .nav { margin-left: 8px; }
+  .nav a { padding: 6px 8px; font-size: 13px; }
+}
