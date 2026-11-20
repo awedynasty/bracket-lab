@@ -357,6 +357,45 @@ def parse_game(event: dict, team_id: str) -> dict | None:
     return game
 
 
+def build_bracket(teams_out: list[dict]) -> dict:
+    """Projected seed list + bubble watch. Also adds projSeed/bidChance to each team."""
+    import bracket_model as bm
+
+    model = bm.train(bm.load_history())
+    eligible = [t for t in teams_out if t.get("wabRank") and t.get("trank")]
+    rows = [{"id": t["id"], "conf": t["conf"], "wab_rank": t["wabRank"], "trank": t["trank"]} for t in eligible]
+
+    # Projected automatic qualifier per conference: best conference record once league play
+    # has started, otherwise the best Torvik team. Independents have no automatic bid.
+    by_conf: dict[str, list[dict]] = {}
+    for t in eligible:
+        if t["conf"] not in ("Independent", "Independents"):
+            by_conf.setdefault(t["conf"], []).append(t)
+
+    def conf_key(t):
+        games = t["confWins"] + t["confLosses"]
+        return (-(t["confWins"] / games) if games else 0, t["trank"])
+
+    auto_ids = {min(group, key=conf_key)["id"] for group in by_conf.values()}
+    field, bubble = bm.project(rows, model, auto_ids)
+
+    slim = lambda r: {k: r[k] for k in ("id", "seed", "overall", "bid", "firstFour")} | {"chance": round(r["chance"], 3)}  # noqa: E731
+    by_id = {t["id"]: t for t in teams_out}
+    for r in rows:
+        by_id[r["id"]]["bidChance"] = round(r["chance"], 3)
+    for r in field:
+        by_id[r["id"]]["projSeed"] = r["seed"]
+    hist = bm.load_history()
+    return {
+        "fieldSize": bm.FIELD_SIZE,
+        "field": [slim(r) for r in field],
+        "bubble": {k: [{"id": r["id"], "chance": round(r["chance"], 3)} for r in v] for k, v in bubble.items()},
+        "backtest": bm.backtest(hist),
+        "guide": bm.guide(hist),
+        "seasons": sorted({r["year"] for r in hist}),
+    }
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "team").mkdir(exist_ok=True)
@@ -441,6 +480,9 @@ def main() -> int:
         }
         teams_out.append(team)
         (OUT / "team" / f"{tid}.json").write_text(json.dumps({"id": tid, "games": games, "roster": s.get("roster", [])}, separators=(",", ":")))
+
+    bracket = build_bracket(teams_out)
+    (OUT / "bracket.json").write_text(json.dumps(bracket, separators=(",", ":")))
 
     meta = {
         "updated": dt.datetime.now(EASTERN).strftime("%Y-%m-%d %I:%M %p ET"),

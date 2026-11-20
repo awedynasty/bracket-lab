@@ -2,7 +2,8 @@
 
 Team resumes for every Division I men's college basketball team: rankings
 (AP, NET, BPI, Torvik, Strength of Record, Wins Above Bubble, SOS), Quad 1–4 records with every game,
-last and next 5 games, and conference standings.
+last and next 5 games, and conference standings. Plus a team comparison tool, a Margin of
+Defeat page, and a Bracketology page with a projected seed list and bubble watch.
 
 The data updates itself every night, so there's nothing to run day to day.
 
@@ -17,6 +18,10 @@ The data updates itself every night, so there's nothing to run day to day.
 
 **Quads** use the NCAA NET once the NCAA publishes it for the season (usually early
 December). Until then, they're estimated from ESPN's BPI rank. The switch happens automatically.
+
+**Bracketology** learns from every tournament since 2015 how a team's Wins Above Bubble and
+Torvik rankings on Selection Sunday translated into a bid and a seed. Once a year, after the
+tournament, add that season to `scripts/build_bracket_history.py` and rerun it (or ask Claude to).
 
 ## One-time setup
 

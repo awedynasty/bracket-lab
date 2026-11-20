@@ -4,6 +4,7 @@
 //         #/team/<id>   -> one team's resume
 //         #/margin      -> margin of defeat (points lost by, and who to)
 //         #/compare/<id>/<id> -> two teams side by side
+//         #/bracket     -> projected seed list + bubble watch (data/bracket.json)
 
 const state = { meta: null, byId: {}, sort: null, search: "", conf: "", modTop: "50", modConf: "" };
 const app = document.getElementById("app");
@@ -40,11 +41,13 @@ async function boot() {
 function route() {
   const m = location.hash.match(/^#\/team\/(\w+)/);
   const c = location.hash.match(/^#\/compare(?:\/(\w*))?(?:\/(\w*))?/);
-  const page = m ? "team" : c ? "compare" : location.hash.startsWith("#/margin") ? "margin" : "home";
+  const page = m ? "team" : c ? "compare" : location.hash.startsWith("#/margin") ? "margin"
+    : location.hash.startsWith("#/bracket") ? "bracket" : "home";
   document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.nav === page));
   if (m && state.byId[m[1]]) renderTeam(m[1]);
   else if (c) renderCompare(c[1], c[2]);
   else if (page === "margin") renderMargin();
+  else if (page === "bracket") renderBracket();
   else renderHome();
   window.scrollTo(0, 0);
 }
@@ -190,6 +193,7 @@ async function renderTeam(id) {
       ${tile("Wins Above Bubble", t.wabRank, t.wab != null ? `${t.wab > 0 ? "+" : ""}${t.wab} wins` : "")}
       ${tile("SOS", t.sos)}
       ${tile("Non-Con SOS", t.ncsos)}
+      ${tile("Proj. Seed", t.projSeed, t.projSeed ? `<a href="#/bracket">Bracketology</a>` : t.bidChance != null ? `${Math.round(t.bidChance * 100)}% bid odds` : "")}
     </div>
 
     <div class="layout">
@@ -471,6 +475,90 @@ async function renderCompare(aId, bId) {
       </div>
     </div>`;
   wire();
+}
+
+// ---------- bracketology ----------
+let bracketData = null;
+const pct = (x) => `${Math.round(x * 100)}%`;
+
+async function renderBracket() {
+  document.title = "Bracketology · Hoops Resume";
+  if (!bracketData) {
+    app.innerHTML = `<p class="loading">Loading…</p>`;
+    bracketData = await (await fetch("data/bracket.json", { cache: "no-cache" })).json();
+    if (!location.hash.startsWith("#/bracket")) return;
+  }
+  const b = bracketData, bt = b.backtest;
+  const T = (id) => state.byId[id];
+  const lines = [];
+  for (const r of b.field) (lines[r.seed] ||= []).push(r);
+
+  const chip = (r) => {
+    const t = T(r.id);
+    return `<a class="seed-team" href="#/team/${t.id}" title="${esc(t.name)} · ${esc(t.conf)} · ${rec(t.wins, t.losses)}">
+      ${logo(t)}<span class="nm">${esc(t.name)}</span>
+      ${r.bid === "auto" ? `<span class="tag aq" title="Projected conference champion (automatic bid)">AQ</span>` : ""}
+      ${r.firstFour ? `<span class="tag ff" title="Plays in the First Four">FF</span>` : ""}
+    </a>`;
+  };
+  const bubbleCard = (title, list, note) => `<section class="card">
+    <div class="card-head"><span>${title}</span></div>
+    <table class="bubble"><tbody>${list.map((r) => { const t = T(r.id); return `<tr>
+      <td><a class="team-cell" href="#/team/${t.id}" style="text-decoration:none">${logo(t)}${esc(t.name)}</a></td>
+      <td class="num c">${rec(t.wins, t.losses)}</td>
+      <td class="num c dim" title="Wins Above Bubble rank">WAB ${rankVal(t.wabRank)}</td>
+      <td class="num c dim" title="Torvik rank">TRK ${rankVal(t.trank)}</td>
+      <td class="num c odds">${pct(r.chance)}</td></tr>`; }).join("")}</tbody></table>
+    ${note ? `<div class="empty">${note}</div>` : ""}
+  </section>`;
+
+  const confBids = {};
+  for (const r of b.field) { const c = T(r.id).confShort; confBids[c] = (confBids[c] || 0) + 1; }
+  const multi = Object.entries(confBids).filter(([, n]) => n > 1).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]));
+
+  app.innerHTML = `
+    <h1 class="page-title">Bracketology</h1>
+    <p class="page-sub">The projected ${b.fieldSize}-team field if the season ended today.</p>
+    <div class="notice">
+      <b>How it works:</b> the model learned from ${b.seasons.length} tournaments (${b.seasons[0]}–${b.seasons[b.seasons.length - 1]})
+      how teams' <b>Wins Above Bubble</b> and <b>Torvik</b> rankings on Selection Sunday turned into bids and seeds.
+      Tested on past seasons, it picked <b>${bt.atLargePicked} of ${bt.atLargeTotal}</b> at-large teams correctly and had seeds within
+      one line <b>${bt.seedWithin1Pct}%</b> of the time (exact ${bt.seedExactPct}%).
+      Conference champions (AQ) are projected as the league leader. It's noisy early in the season and sharpens by March.
+    </div>
+    <div class="bracket-layout">
+      <section class="card">
+        <div class="card-head"><span>Seed List</span><span class="dim-head">AQ = auto bid · FF = First Four</span></div>
+        <div class="seed-lines">${lines.map((l, seed) => l ? `<div class="seed-line">
+          <div class="seed-num">${seed}</div><div class="seed-teams">${l.map(chip).join("")}</div></div>` : "").join("")}
+        </div>
+      </section>
+      <div class="side">
+        ${bubbleCard("Last Four Byes", b.bubble.lastFourByes)}
+        ${bubbleCard("Last Four In", b.bubble.lastFourIn)}
+        ${bubbleCard("First Four Out", b.bubble.firstFourOut)}
+        ${bubbleCard("Next Four Out", b.bubble.nextFourOut, "% = how often teams ranked like this got an at-large bid in past seasons.")}
+        <section class="card">
+          <div class="card-head"><span>Multi-Bid Conferences</span></div>
+          <table class="bubble"><tbody>${multi.map(([c, n]) => `<tr><td>${esc(c)}</td><td class="num c">${n}</td></tr>`).join("")}</tbody></table>
+        </section>
+      </div>
+    </div>
+    <section class="card guide-card">
+      <div class="card-head"><span>What a Ranking Has Meant on Selection Sunday</span></div>
+      <div class="table-wrap"><table class="guide">
+        <thead>
+          <tr><th rowspan="2">Rank</th><th colspan="2" class="c">Wins Above Bubble</th><th colspan="2" class="c">Torvik</th></tr>
+          <tr><th class="c">Made field</th><th class="c">Avg seed</th><th class="c">Made field</th><th class="c">Avg seed</th></tr>
+        </thead>
+        <tbody>${b.guide.map((g) => `<tr><td class="num">${g.range}</td>
+          <td class="num c">${g.wab.inField ?? "—"}%</td><td class="num c"><b>${g.wab.avgSeed ?? "—"}</b></td>
+          <td class="num c">${g.torvik.inField ?? "—"}%</td><td class="num c"><b>${g.torvik.avgSeed ?? "—"}</b></td></tr>`).join("")}
+        </tbody>
+      </table></div>
+      <div class="empty">Example: teams ranked 5–8 in WAB on Selection Sunday have all made the field, with an average seed of
+        ${b.guide[1].wab.avgSeed}. Based on ${b.seasons.length} tournaments.</div>
+    </section>`;
 }
 
 boot().catch((e) => {
