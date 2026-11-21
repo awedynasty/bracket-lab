@@ -263,14 +263,27 @@ def load_net(matcher: TeamMatcher, season_start: dt.date) -> tuple[dict[str, int
     return out, as_of.isoformat() if as_of else None
 
 
-def load_torvik(matcher: TeamMatcher, season_year: int) -> dict[str, dict]:
-    """T-Rank and WAB keyed by ESPN id, from Torvik's published season file."""
+TORVIK_CACHE = OUT / "torvik_cache.json"
+
+
+def load_torvik(matcher: TeamMatcher, season_year: int) -> tuple[dict[str, dict], str | None]:
+    """T-Rank, WAB and ratings keyed by ESPN id, from Torvik's published season file.
+
+    Returns (teams, stale_date). Torvik refuses requests from GitHub's servers, so when the
+    download fails the last good copy (docs/data/torvik_cache.json) is used and stale_date
+    says which day it's from. Don't try to disguise requests to get around Torvik's block."""
     try:
         text = fetch(f"https://barttorvik.com/{season_year}_team_results.csv", as_json=False)
         rows = list(csv.DictReader(io.StringIO(text)))
+        if not rows or "WAB" not in rows[0]:
+            raise ValueError("unexpected file contents")
     except Exception as e:
-        log(f"Torvik: request failed ({e}) - skipping")
-        return {}
+        if TORVIK_CACHE.exists():
+            cache = json.loads(TORVIK_CACHE.read_text())
+            log(f"Torvik: request failed ({e}) - using the saved copy from {cache['date']}")
+            return cache["teams"], cache["date"]
+        log(f"Torvik: request failed ({e}) and no saved copy - skipping")
+        return {}, None
     out, missed = {}, []
     for r in rows:
         espn_id = matcher.find(r["team"])
@@ -294,7 +307,9 @@ def load_torvik(matcher: TeamMatcher, season_year: int) -> dict[str, dict]:
             "tempo": num("adjt"),
         }
     log(f"Torvik: {len(out)} teams" + (f", unmatched: {missed}" if missed else ""))
-    return out
+    if len(out) > 300:
+        TORVIK_CACHE.write_text(json.dumps({"date": dt.date.today().isoformat(), "teams": out}, separators=(",", ":")))
+    return out, None
 
 
 def load_espn_conferences() -> dict[str, str]:
@@ -466,7 +481,7 @@ def main() -> int:
     season_start = dt.date(dt.date.today().year if dt.date.today().month >= 7 else dt.date.today().year - 1, 11, 1)
     net, net_as_of = load_net(matcher, season_start)
     sdio = load_sportsdata(matcher)
-    torvik = load_torvik(matcher, season_start.year + 1)
+    torvik, torvik_stale = load_torvik(matcher, season_start.year + 1)
     espn_conf = load_espn_conferences() if len(sdio) < 300 else {}
 
     d1_ids = {t["id"] for t in espn_teams}
@@ -557,6 +572,7 @@ def main() -> int:
         "quadSource": rank_source,
         "netAsOf": net_as_of,
         "sims": (bracket.get("projected") or {}).get("sims"),
+        "torvikStale": torvik_stale,
         "teams": teams_out,
     }
     (OUT / "teams.json").write_text(json.dumps(meta, separators=(",", ":")))

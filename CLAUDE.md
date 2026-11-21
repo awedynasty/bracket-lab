@@ -12,7 +12,10 @@ Python standard library.
 - Sources: SportsDataIO `LeagueHierarchy`, `Stadiums` and `PlayersByActive` (team info,
   arenas, rosters; the key does not cover games or stats), ESPN team schedules and BPI powerindex, and the NCAA.com NET HTML table.
   Torvik T-Rank/WAB come from the published `barttorvik.com/<year>_team_results.csv`; its
-  HTML pages sit behind a browser check, so don't scrape or work around those. The cbbdata
+  HTML pages sit behind a browser check, so don't scrape or work around those.
+  Torvik also refuses requests from GitHub Actions servers (403). Don't disguise requests to
+  get around that: the updater falls back to `docs/data/torvik_cache.json` (last good copy,
+  refreshed whenever a download works) and the site shows a "Torvik data from <date>" notice. The cbbdata
   API (successor to toRvik) has no data after June 2025, so it isn't used.
 - Name matching across sources: `norm()` + `TeamMatcher`, with overrides in
   `scripts/team_aliases.json`. Watch the updater's log for "unmatched".

@@ -62,6 +62,12 @@ function route() {
   window.scrollTo(0, 0);
 }
 
+function staleNotice() {
+  const d = state.meta.torvikStale;
+  return d ? `<div class="notice">Torvik's data couldn't be downloaded during the last update, so Torvik ranks, WAB and
+    projections are from <b>${esc(d)}</b>. Everything else is current.</div>` : "";
+}
+
 function quadNotice() {
   if (state.meta.quadSource === "NET") {
     return `<div class="notice">Quads use the NCAA NET rankings (through ${esc(state.meta.netAsOf)}).</div>`;
@@ -94,6 +100,7 @@ function renderHome() {
   document.title = "Nasta's Bracket Lab";
   const confs = [...new Set(state.meta.teams.map((t) => t.conf))].sort();
   app.innerHTML = `
+    ${staleNotice()}
     ${quadNotice()}
     <div class="controls">
       <input id="search" type="search" placeholder="Search teams…" value="${esc(state.search)}" aria-label="Search teams">
@@ -570,6 +577,7 @@ async function renderBracket() {
 
   app.innerHTML = `
     <h1 class="page-title">Bracketology</h1>
+    ${staleNotice()}
     ${hasProj ? `<div class="mode-toggle" role="tablist" aria-label="Projection mode">
       <button role="tab" data-mode="today" class="${P ? "" : "on"}" aria-selected="${!P}">If the season ended today</button>
       <button role="tab" data-mode="projected" class="${P ? "on" : ""}" aria-selected="${P}">Projected Selection Sunday</button>
