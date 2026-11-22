@@ -266,22 +266,25 @@ def load_net(matcher: TeamMatcher, season_start: dt.date) -> tuple[dict[str, int
 TORVIK_CACHE = OUT / "torvik_cache.json"
 
 
-def load_torvik(matcher: TeamMatcher, season_year: int) -> tuple[dict[str, dict], str | None]:
+def load_torvik(matcher: TeamMatcher, season_year: int, use_cache: bool = True) -> tuple[dict[str, dict], str | None]:
     """T-Rank, WAB and ratings keyed by ESPN id, from Torvik's published season file.
 
-    Returns (teams, stale_date). Torvik refuses requests from GitHub's servers, so when the
-    download fails the last good copy (docs/data/torvik_cache.json) is used and stale_date
-    says which day it's from. Don't try to disguise requests to get around Torvik's block."""
+    Returns (teams, stale_date). Torvik's host (CloudFront) blocks GitHub's servers, so a nightly
+    task elsewhere (scripts/fetch_torvik.py, run with Bart Torvik's OK) saves the file to
+    docs/data/torvik_cache.json first. When the download here fails, that copy is used;
+    stale_date is set only if the copy is older than today. Don't disguise requests to get
+    around the block."""
     try:
         text = fetch(f"https://barttorvik.com/{season_year}_team_results.csv", as_json=False)
         rows = list(csv.DictReader(io.StringIO(text)))
         if not rows or "WAB" not in rows[0]:
             raise ValueError("unexpected file contents")
     except Exception as e:
-        if TORVIK_CACHE.exists():
+        if use_cache and TORVIK_CACHE.exists():
             cache = json.loads(TORVIK_CACHE.read_text())
-            log(f"Torvik: request failed ({e}) - using the saved copy from {cache['date']}")
-            return cache["teams"], cache["date"]
+            today = dt.datetime.now(EASTERN).date().isoformat()
+            log(f"Torvik: download failed ({e}) - using the saved copy from {cache['date']}")
+            return cache["teams"], (cache["date"] if cache["date"] < today else None)
         log(f"Torvik: request failed ({e}) and no saved copy - skipping")
         return {}, None
     out, missed = {}, []
@@ -308,7 +311,8 @@ def load_torvik(matcher: TeamMatcher, season_year: int) -> tuple[dict[str, dict]
         }
     log(f"Torvik: {len(out)} teams" + (f", unmatched: {missed}" if missed else ""))
     if len(out) > 300:
-        TORVIK_CACHE.write_text(json.dumps({"date": dt.date.today().isoformat(), "teams": out}, separators=(",", ":")))
+        TORVIK_CACHE.write_text(json.dumps({"date": dt.datetime.now(EASTERN).date().isoformat(), "teams": out},
+                                           separators=(",", ":")))
     return out, None
 
 

@@ -13,9 +13,10 @@ Python standard library.
   arenas, rosters; the key does not cover games or stats), ESPN team schedules and BPI powerindex, and the NCAA.com NET HTML table.
   Torvik T-Rank/WAB come from the published `barttorvik.com/<year>_team_results.csv`; its
   HTML pages sit behind a browser check, so don't scrape or work around those.
-  Torvik also refuses requests from GitHub Actions servers (403). Don't disguise requests to
-  get around that: the updater falls back to `docs/data/torvik_cache.json` (last good copy,
-  refreshed whenever a download works) and the site shows a "Torvik data from <date>" notice. The cbbdata
+  Torvik's host (CloudFront) blocks GitHub Actions servers (403). Bart Torvik OK'd a nightly
+  download, so a Claude scheduled task runs `scripts/fetch_torvik.py` at 3:31 AM ET and pushes
+  `docs/data/torvik_cache.json`; the 4:17 AM GitHub job then uses that copy. If the copy is
+  older than today, the site shows a "Torvik data from <date>" notice. Never disguise requests. The cbbdata
   API (successor to toRvik) has no data after June 2025, so it isn't used.
 - Name matching across sources: `norm()` + `TeamMatcher`, with overrides in
   `scripts/team_aliases.json`. Watch the updater's log for "unmatched".
