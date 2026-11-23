@@ -296,14 +296,14 @@ function quadCard(q, t, games) {
   const [w, l] = t.quads[q];
   return `<section class="card">
     <div class="card-head"><span>${QUAD_NAMES[q]}</span><span class="rec num">${w} - ${l}</span></div>
-    ${shown.length ? `<table class="games"><tbody>${shown.map(gameRow).join("")}</tbody></table>` : `<div class="empty">No games.</div>`}
+    ${shown.length ? `<div class="table-wrap"><table class="games"><tbody>${shown.map(gameRow).join("")}</tbody></table></div>` : `<div class="empty">No games.</div>`}
   </section>`;
 }
 
 function listCard(title, list, emptyText) {
   return `<section class="card">
     <div class="card-head"><span>${title}</span></div>
-    ${list.length ? `<table class="games"><tbody>${list.map(gameRow).join("")}</tbody></table>` : `<div class="empty">${emptyText}</div>`}
+    ${list.length ? `<div class="table-wrap"><table class="games"><tbody>${list.map(gameRow).join("")}</tbody></table></div>` : `<div class="empty">${emptyText}</div>`}
   </section>`;
 }
 
@@ -562,12 +562,12 @@ async function renderBracket() {
   };
   const bubbleCard = (title, list, note) => `<section class="card">
     <div class="card-head"><span>${title}</span></div>
-    <table class="bubble"><tbody>${list.map((r) => { const t = T(r.id); return `<tr>
+    <div class="table-wrap"><table class="bubble pin"><tbody>${list.map((r) => { const t = T(r.id); return `<tr>
       <td><a class="team-cell" href="#/team/${t.id}" style="text-decoration:none">${logo(t)}${esc(t.name)}</a></td>
       <td class="num c" title="${P ? "Projected final record" : "Record"}">${P && t.proj ? projRec(t.proj.wins, t.proj.losses) : rec(t.wins, t.losses)}</td>
       <td class="num c dim" title="${P ? "Projected final " : ""}Wins Above Bubble rank">WAB ${rankVal(P && t.proj ? t.proj.wabRank : t.wabRank)}</td>
       <td class="num c dim" title="Torvik rank">TRK ${rankVal(t.trank)}</td>
-      <td class="num c odds">${pct(r.chance)}</td></tr>`; }).join("")}</tbody></table>
+      <td class="num c odds">${pct(r.chance)}</td></tr>`; }).join("")}</tbody></table></div>
     ${note ? `<div class="empty">${note}</div>` : ""}
   </section>`;
 
@@ -625,7 +625,7 @@ async function renderBracket() {
       <div class="guide-tabs" role="tablist">
         <button class="on" data-mode="avgSeed">Average seed</button><button data-mode="inField">Made the field</button>
       </div>
-      <div class="table-wrap"><table class="guide" id="guide"></table></div>
+      <div class="table-wrap"><table class="guide pin" id="guide"></table></div>
       <div class="empty" id="guide-note"></div>
     </section>`;
   const systems = Object.keys(b.guide[0]).filter((k) => k !== "range");
