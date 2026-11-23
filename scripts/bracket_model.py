@@ -24,9 +24,14 @@ from collections import defaultdict
 from pathlib import Path
 
 HISTORY = Path(__file__).parent / "history" / "selection_sunday.csv"
-FIELD_SIZE = 68
-FIRST_FOUR_AT_LARGE = 4   # last four at-large teams in play in the First Four
-FIRST_FOUR_AUTO = 4       # lowest four automatic qualifiers play in the First Four (16 seeds)
+# Tournament formats. From 2027 the field is 76: 32 automatic bids + 44 at-large, with a
+# 12-game opening round (the 12 lowest automatic qualifiers play each other and fill the 16
+# line plus half the 15 line; the 12 lowest at-large teams play each other). Past seasons
+# were 68 teams with a 4-game First Four, so the backtest uses that format.
+FORMAT_76 = {"field": 76, "openAtLarge": 12, "openAuto": 12}
+FORMAT_68 = {"field": 68, "openAtLarge": 4, "openAuto": 4}
+CURRENT_FORMAT = FORMAT_76
+FIELD_SIZE = CURRENT_FORMAT["field"]
 
 
 SELECT_FEATURES = ["wab_rank", "trank"]
@@ -143,19 +148,37 @@ def train(rows, select_feats=SELECT_FEATURES, seed_feats=SEED_FEATURES):
 # --------------------------------------------------------------------------- #
 # Projection
 # --------------------------------------------------------------------------- #
-def project(teams, model, auto_ids, given_chance=False):
+def _calibrate_chances(pool, w, feats, slots):
+    """Shift the selection model's baseline so the expected number of at-large bids equals
+    the slots available (36 in the old format, 44 in the 76-team format)."""
+    xs = [features(t, feats) for t in pool]
+    lo, hi = -15.0, 15.0
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        total = sum(prob([w[0] + mid] + w[1:], x) for x in xs)
+        lo, hi = (mid, hi) if total < slots else (lo, mid)
+    return (lo + hi) / 2
+
+
+def project(teams, model, auto_ids, given_chance=False, fmt=None):
     """teams: list of dicts with id, conf and the model's rank columns.
     auto_ids: the projected automatic qualifier for each conference.
     given_chance: use each team's existing "chance" (e.g. simulated odds) to pick at-large teams.
+    fmt: tournament format (defaults to CURRENT_FORMAT).
     Returns (field, bubble) where field is the ordered seed list."""
+    fmt = fmt or CURRENT_FORMAT
     for t in teams:
-        if not given_chance:
-            t["chance"] = prob(model["select"], features(t, model["selectFeatures"]))
         t["seedScore"] = _dot(model["seed"], features(t, model["seedFeatures"]))
 
     autos = [t for t in teams if t["id"] in auto_ids]
-    n_at_large = FIELD_SIZE - len(autos)
-    pool = sorted((t for t in teams if t["id"] not in auto_ids), key=lambda t: -t["chance"])
+    n_at_large = fmt["field"] - len(autos)
+    others = [t for t in teams if t["id"] not in auto_ids]
+    if not given_chance:
+        w, feats = model["select"], model["selectFeatures"]
+        shift = _calibrate_chances(others, w, feats, n_at_large)
+        for t in teams:  # every team (auto bids too) gets at-large odds on the same scale
+            t["chance"] = prob([w[0] + shift] + w[1:], features(t, feats))
+    pool = sorted(others, key=lambda t: -t["chance"])
     at_large = pool[:n_at_large]
     out = pool[n_at_large:]
     for t in autos:
@@ -163,32 +186,36 @@ def project(teams, model, auto_ids, given_chance=False):
     for t in at_large:
         t["bid"] = "at-large"
 
-    # First Four: the last four at-large teams in, and the four lowest automatic qualifiers.
-    last_in = sorted(at_large, key=lambda t: t["chance"])[:FIRST_FOUR_AT_LARGE]
-    low_autos = sorted(autos, key=lambda t: -t["seedScore"])[:FIRST_FOUR_AUTO]
+    # Opening round: the lowest-seeded at-large teams and the lowest-seeded automatic qualifiers.
+    by_chance = sorted(at_large, key=lambda t: t["chance"])
+    by_seed = sorted(at_large, key=lambda t: -t["seedScore"])  # worst seed first
+    open_at_large = by_seed[:fmt["openAtLarge"]]
+    open_autos = sorted(autos, key=lambda t: -t["seedScore"])[:fmt["openAuto"]]
 
-    # Build 64 slots: First Four pairs share one slot each.
+    # Build 64 slots: each opening-round pair shares one slot.
     def pairs(group):
         g = sorted(group, key=lambda t: t["seedScore"])
         return [g[i:i + 2] for i in range(0, len(g), 2)]
 
-    paired = {t["id"] for t in last_in + low_autos}
-    slots = [[t] for t in autos + at_large if t["id"] not in paired] + pairs(last_in) + pairs(low_autos)
+    paired = {t["id"] for t in open_at_large + open_autos}
+    slots = [[t] for t in autos + at_large if t["id"] not in paired] + pairs(open_at_large)
     slots.sort(key=lambda s: sum(t["seedScore"] for t in s) / len(s))
-    # The 16 line is reserved for the weakest teams; the First Four auto pairs must land there.
+    slots += pairs(open_autos)  # automatic-bid pairs always fill the bottom lines (16s, then 15s)
     for i, slot in enumerate(slots):
         seed = i // 4 + 1
         for t in slot:
             t["seed"] = seed
-            t["firstFour"] = len(slot) == 2
+            t["firstFour"] = len(slot) == 2  # plays in the opening round
 
     field = sorted((t for s in slots for t in s), key=lambda t: (t["seed"], t["seedScore"]))
     for i, t in enumerate(field, 1):
         t["overall"] = i
 
+    k = fmt["openAtLarge"]
     bubble = {
-        "lastFourByes": sorted(at_large, key=lambda t: t["chance"])[4:8][::-1],
-        "lastFourIn": last_in[::-1],
+        # lowest-seeded at-large teams that skip the opening round (not also listed as last in)
+        "lastFourByes": [t for t in by_seed[k:] if t not in by_chance[:4]][:4][::-1],
+        "lastFourIn": by_chance[:4][::-1],
         "firstFourOut": out[:4],
         "nextFourOut": out[4:8],
     }
@@ -211,7 +238,7 @@ def backtest(rows, select_feats=SELECT_FEATURES, seed_feats=SEED_FEATURES):
         autos = auto_bids_in_history(yr)
         real_seed = {r["team"]: r["seed"] for r in yr}
         actual_at_large = {r["team"] for r in yr if r["seed"] and r["team"] not in autos}
-        field, _ = project(yr, model, autos)
+        field, _ = project(yr, model, autos, fmt=FORMAT_68)
         predicted_at_large = {t["team"] for t in field if t["bid"] == "at-large"}
         picked += len(actual_at_large & predicted_at_large)
         total += len(actual_at_large)

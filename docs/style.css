@@ -176,7 +176,7 @@ td.c, th.c { text-align: center; }
 .hero .sub b { font-weight: 600; }
 
 .tiles {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 10px; margin-bottom: 16px;
 }
 .tile {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);

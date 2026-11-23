@@ -27,6 +27,12 @@ Python standard library.
   Selection uses WAB + Torvik; seeding uses WAB + Torvik + NET + SOR (NET drops out until
   it's released each December). Backtests showed BPI/KenPom/KPI don't help picks; KenPom/KPI
   help seeding slightly but have no free daily feed, so they're only in the guide table.
+- Format: from 2027 the field is 76 (32 AQ + 44 at-large) with a 12-game Opening Round
+  (12 lowest AQs -> 16 line + half the 15 line; 12 lowest at-large). `bracket_model.FORMAT_76`
+  is CURRENT_FORMAT; backtests use FORMAT_68 since past seasons were 68. Selection odds are
+  recalibrated so expected at-large bids = available slots.
+- Master Rank (owner's Power BI measure): average of BPI, NET, SOR, Torvik, WAB ranks (KenPom/KPI
+  were in the original but have no daily feed); `masterAvg` / `masterRank` in teams.json.
 - History file: `scripts/build_bracket_history.py --massey <MMasseyOrdinals.csv>`. Torvik
   rank/WAB from Torvik time-machine files; seeds from cbbdata (<=2025) and ESPN (2026+);
   NET/KenPom/BPI/SOR/KPI from Kaggle March Machine Learning Mania `MMasseyOrdinals.csv`

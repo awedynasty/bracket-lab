@@ -201,8 +201,10 @@ def simulate(teams, games_by_team, predictor, bracket_model_module, model, n_sim
     in_ids = {r["id"] for r in field if r["bid"] == "at-large"}
     ins = [r for r in pool if r["id"] in in_ids]
     outs = [r for r in pool if r["id"] not in in_ids]
+    k = bm.CURRENT_FORMAT["openAtLarge"]
+    seeded = sorted((r for r in field if r["bid"] == "at-large"), key=lambda r: -r["seedScore"])
     bubble = {
-        "lastFourByes": ins[-8:-4],
+        "lastFourByes": [r for r in seeded[k:] if r not in ins[-4:]][:4][::-1],
         "lastFourIn": ins[-4:],
         "firstFourOut": outs[:4],
         "nextFourOut": outs[4:8],

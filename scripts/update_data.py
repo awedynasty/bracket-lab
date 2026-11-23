@@ -386,6 +386,30 @@ def parse_game(event: dict, team_id: str) -> dict | None:
     return game
 
 
+# Master Rank (from the owner's old Power BI report): the average of a team's rankings.
+# KenPom and KPI were part of the original; they have no free daily feed, so they're left out.
+MASTER_SYSTEMS = {"bpiRank": "BPI", "net": "NET", "sor": "SOR", "trank": "Torvik", "wabRank": "WAB"}
+
+
+def add_master_rank(teams_out: list[dict]) -> None:
+    """Adds masterAvg (average of available ranks) and masterRank (1 = best average)."""
+    # Only use a system once it's out for (nearly) every team, e.g. NET from December.
+    used = [k for k in MASTER_SYSTEMS if sum(1 for t in teams_out if t.get(k)) >= 300]
+    for t in teams_out:
+        ranks = [t[k] for k in used if t.get(k)]
+        t["masterAvg"] = round(sum(ranks) / len(ranks), 1) if len(ranks) == len(used) else None
+    ordered = sorted((t for t in teams_out if t["masterAvg"] is not None), key=lambda t: t["masterAvg"])
+    for i, t in enumerate(ordered, 1):
+        t["masterRank"] = i
+    for t in teams_out:
+        t.setdefault("masterRank", None)
+    log(f"Master Rank: average of {', '.join(MASTER_SYSTEMS[k] for k in used)}")
+    MASTER_USED[:] = [MASTER_SYSTEMS[k] for k in used]
+
+
+MASTER_USED: list[str] = []
+
+
 def build_bracket(teams_out: list[dict]) -> dict:
     """Projected seed list + bubble watch. Also adds projSeed/bidChance to each team."""
     import bracket_model as bm
@@ -563,6 +587,7 @@ def main() -> int:
         games_by_team[tid] = games
         rosters[tid] = s.get("roster", [])
 
+    add_master_rank(teams_out)
     bracket = build_bracket(teams_out)
     bracket["projected"] = project_season(teams_out, games_by_team)
     for tid, games in games_by_team.items():
@@ -577,6 +602,7 @@ def main() -> int:
         "netAsOf": net_as_of,
         "sims": (bracket.get("projected") or {}).get("sims"),
         "torvikStale": torvik_stale,
+        "masterUses": MASTER_USED,
         "teams": teams_out,
     }
     (OUT / "teams.json").write_text(json.dumps(meta, separators=(",", ":")))
@@ -584,7 +610,8 @@ def main() -> int:
     # Daily snapshot of every team's rankings, kept for the future bracket-projection model.
     hist = OUT / "history"
     hist.mkdir(exist_ok=True)
-    snap_keys = ("wins", "losses", "ap", "net", "bpiRank", "sor", "trank", "wab", "wabRank", "sos", "ncsos", "quads")
+    snap_keys = ("wins", "losses", "ap", "net", "bpiRank", "sor", "trank", "wab", "wabRank", "sos", "ncsos", "quads",
+                 "masterAvg", "masterRank")
     snapshot = {"date": dt.datetime.now(EASTERN).date().isoformat(), "quadSource": rank_source,
                 "teams": {t["id"]: {k: t[k] for k in snap_keys} for t in teams_out}}
     (hist / f"{snapshot['date']}.json").write_text(json.dumps(snapshot, separators=(",", ":")))

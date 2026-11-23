@@ -82,6 +82,7 @@ const COLUMNS = [
   { key: "conf", label: "Conf", get: (t) => t.confShort, text: true },
   { key: "wl", label: "W-L", get: (t) => t.wins - t.losses, desc: true, show: (t) => rec(t.wins, t.losses), c: true },
   { key: "cwl", label: "Conf", get: (t) => t.confWins - t.confLosses, desc: true, show: (t) => rec(t.confWins, t.confLosses), c: true },
+  { key: "master", label: "Master", get: (t) => t.masterRank, c: true },
   { key: "ap", label: "AP", get: (t) => t.ap, c: true },
   { key: "net", label: "NET", get: (t) => t.net, c: true },
   { key: "bpiRank", label: "BPI", get: (t) => t.bpiRank, c: true },
@@ -102,6 +103,7 @@ function renderHome() {
   app.innerHTML = `
     ${staleNotice()}
     ${quadNotice()}
+    <p class="page-sub">Master Rank = average of each team's ${esc((state.meta.masterUses || []).join(", "))} rankings (KenPom and KPI aren't available daily).</p>
     <div class="controls">
       <input id="search" type="search" placeholder="Search teams…" value="${esc(state.search)}" aria-label="Search teams">
       <select id="conf" aria-label="Conference">
@@ -203,6 +205,7 @@ async function renderTeam(id) {
     ${state.meta.quadSource === "NET" ? "" : quadNotice()}
 
     <div class="tiles">
+      ${tile("Master Rank", t.masterRank, t.masterAvg != null ? `Avg ${t.masterAvg} of ${(state.meta.masterUses || []).length}` : "")}
       ${tile("AP", t.ap, t.ap ? "" : "Unranked")}
       ${tile("NET", t.net, t.net ? "" : "Not out yet")}
       ${tile("BPI", t.bpiRank, t.bpi != null ? `Rating ${t.bpi > 0 ? "+" : ""}${t.bpi}` : "")}
@@ -412,6 +415,8 @@ const COMPARE_ROWS = [
   { label: "Overall", show: (t) => rec(t.wins, t.losses), val: (t) => winPct(t.wins, t.losses), better: "high" },
   { label: "Conference", show: (t) => rec(t.confWins, t.confLosses), val: (t) => winPct(t.confWins, t.confLosses), better: "high" },
   { group: "Rankings" },
+  { label: "Master Rank", val: (t) => t.masterRank, better: "low",
+    show: (t) => t.masterRank == null ? "—" : `${t.masterRank} <span class="dim">(avg ${t.masterAvg})</span>` },
   { label: "AP Poll", val: (t) => t.ap, better: "low" },
   { label: "NET", val: (t) => t.net, better: "low" },
   { label: "BPI", val: (t) => t.bpiRank, better: "low" },
@@ -557,7 +562,7 @@ async function renderBracket() {
     return `<a class="seed-team" href="#/team/${t.id}" title="${esc(t.name)} · ${esc(t.conf)} · ${recText}${P ? ` · ${pctText(r.chance)} to make the field` : ""}">
       ${logo(t)}<span class="nm">${esc(t.name)}</span>
       ${r.bid === "auto" ? `<span class="tag aq" title="Projected conference champion (automatic bid)">AQ</span>` : ""}
-      ${r.firstFour ? `<span class="tag ff" title="Plays in the First Four">FF</span>` : ""}
+      ${r.firstFour ? `<span class="tag ff" title="Plays in the Opening Round (Dayton)">OR</span>` : ""}
     </a>`;
   };
   const bubbleCard = (title, list, note) => `<section class="card">
@@ -567,7 +572,7 @@ async function renderBracket() {
       <td class="num c" title="${P ? "Projected final record" : "Record"}">${P && t.proj ? projRec(t.proj.wins, t.proj.losses) : rec(t.wins, t.losses)}</td>
       <td class="num c dim" title="${P ? "Projected final " : ""}Wins Above Bubble rank">WAB ${rankVal(P && t.proj ? t.proj.wabRank : t.wabRank)}</td>
       <td class="num c dim" title="Torvik rank">TRK ${rankVal(t.trank)}</td>
-      <td class="num c odds">${pct(r.chance)}</td></tr>`; }).join("")}</tbody></table></div>
+      <td class="num c odds">${pctText(r.chance)}</td></tr>`; }).join("")}</tbody></table></div>
     ${note ? `<div class="empty">${note}</div>` : ""}
   </section>`;
 
@@ -583,7 +588,9 @@ async function renderBracket() {
       <button role="tab" data-mode="projected" class="${P ? "on" : ""}" aria-selected="${P}">Projected Selection Sunday</button>
     </div>` : ""}
     <p class="page-sub">${P ? `The most likely ${b.fieldSize}-team field after the rest of the season plays out.`
-      : `The projected ${b.fieldSize}-team field if the season ended today.`}</p>
+      : `The projected ${b.fieldSize}-team field if the season ended today.`}
+      ${b.fieldSize === 76 ? ` New for 2027: 76 teams (32 automatic bids, 44 at-large) and a 12-game Opening Round —
+      the 12 lowest automatic qualifiers and the last 12 at-large teams in.` : ""}</p>
     ${P ? `<div class="notice">
       <b>How it works:</b> every remaining game (${b.projected.remainingGames.toLocaleString()} of them) gets a win chance from Torvik's
       offense, defense and tempo ratings plus home court. That game model called <b>${Math.round(b.projected.gameAccuracy * 100)}%</b>
@@ -602,7 +609,7 @@ async function renderBracket() {
     </div>`}
     <div class="bracket-layout">
       <section class="card">
-        <div class="card-head"><span>Seed List</span><span class="dim-head">AQ = auto bid · FF = First Four</span></div>
+        <div class="card-head"><span>Seed List</span><span class="dim-head">AQ = auto bid · OR = Opening Round</span></div>
         <div class="seed-lines">${lines.map((l, seed) => l ? `<div class="seed-line">
           <div class="seed-num">${seed}</div><div class="seed-teams">${l.map(chip).join("")}</div></div>` : "").join("")}
         </div>
