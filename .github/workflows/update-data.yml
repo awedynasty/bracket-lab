@@ -37,5 +37,9 @@ jobs:
             echo "No data changes."
           else
             git commit -m "Nightly data update $(date -u +%Y-%m-%d)"
-            git push
+            # Another job (the Torvik download) may have pushed meanwhile: rebase and retry.
+            for i in 1 2 3; do
+              git pull --rebase origin main && git push && break
+              sleep 10
+            done
           fi
