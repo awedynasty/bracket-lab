@@ -46,11 +46,16 @@ Python standard library.
   conference champions and the bracket model each run. Output: `team.proj` in teams.json,
   `winProb` on upcoming games, and `bracket.json` -> `projected` (the "Projected Selection
   Sunday" toggle). Conference tournaments aren't simulated; auto bids = regular-season champ.
-- `docs/data/history/<date>.json` is a daily ranking snapshot (incl. NET/SOR/BPI), saved so
-  those metrics can join the model in future seasons. Don't delete it.
-- Front end: `docs/index.html`, `docs/app.js` (hash routes `#/`, `#/team/<id>`, `#/margin`, `#/compare/<id>/<id>`, `#/bracket`),
+- `docs/data/history/<date>.json` is a daily snapshot (ranks, Master Rank, bid odds `inField`,
+  `projSeed`). Don't delete it: it feeds trend lines (`trend` in each team file, built by
+  `build_trends`), the Movers chart (`bracket.json` -> `movers`; bid odds once a week of odds
+  exists, else Master Rank) and future model training.
+- Charts: `docs/charts.js` draws hand-made SVG charts (résumé dots, ranking trends, Torvik-vs-WAB
+  scatter, movers bars) with a shared tooltip; colors are `--s1..--s6` in style.css (reference
+  dataviz palette, validated light + dark). Route `#/charts`; résumé + trends also on team pages.
+- Front end: `docs/index.html`, `docs/app.js` (hash routes `#/`, `#/team/<id>`, `#/margin`, `#/compare/<id>/<id>`, `#/bracket`, `#/charts`),
   `docs/style.css` (colors are CSS variables at the top, with dark mode).
-- After changing `docs/app.js` or `docs/style.css`, bump the `?v=` version on both in
+- After changing `docs/app.js`, `docs/charts.js` or `docs/style.css`, bump the `?v=` version on all in
   `docs/index.html` so phones don't keep serving the old cached files.
 - Test: run the updater with `SPORTSDATA_KEY` set, serve `docs/` with
   `python3 -m http.server`, and check a team page at desktop and phone widths.

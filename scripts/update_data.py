@@ -499,6 +499,107 @@ def project_season(teams_out: list[dict], games_by_team: dict[str, list[dict]]) 
     }
 
 
+# --------------------------------------------------------------------------- #
+# History: daily snapshots -> trend lines and movers
+# --------------------------------------------------------------------------- #
+HISTORY = OUT / "history"
+SNAP_KEYS = ("wins", "losses", "ap", "net", "bpiRank", "sor", "trank", "wab", "wabRank", "sos", "ncsos", "quads",
+             "masterAvg", "masterRank")
+TREND_SERIES = {"master": "masterRank", "net": "net", "bpi": "bpiRank", "torvik": "trank", "sor": "sor",
+                "wab": "wabRank", "odds": "inField"}
+
+
+def save_snapshot(teams_out: list[dict], rank_source: str) -> None:
+    """Today's rankings and tournament odds for every team (docs/data/history/<date>.json)."""
+    HISTORY.mkdir(exist_ok=True)
+    teams = {}
+    for t in teams_out:
+        row = {k: t.get(k) for k in SNAP_KEYS}
+        row["inField"] = (t.get("proj") or {}).get("inField")
+        row["projSeed"] = (t.get("proj") or {}).get("projSeed")
+        teams[t["id"]] = row
+    date = dt.datetime.now(EASTERN).date().isoformat()
+    (HISTORY / f"{date}.json").write_text(json.dumps(
+        {"date": date, "quadSource": rank_source, "teams": teams}, separators=(",", ":")))
+
+
+def _snapshot_master(teams: dict) -> None:
+    """Fill in Master Rank for older snapshots saved before it existed (same rule as today)."""
+    if sum(1 for r in teams.values() if r.get("masterRank")) >= 300:
+        return
+    used = [k for k in MASTER_SYSTEMS if sum(1 for r in teams.values() if r.get(k)) >= 300]
+    avgs = {}
+    for tid, r in teams.items():
+        ranks = [r[k] for k in used if r.get(k)]
+        if used and len(ranks) == len(used):
+            avgs[tid] = sum(ranks) / len(ranks)
+    for i, tid in enumerate(sorted(avgs, key=avgs.get), 1):
+        teams[tid]["masterRank"] = i
+
+
+def build_trends() -> dict:
+    """Per-team daily series for the trend charts: {"dates": [...], "teams": {id: {series: [...]}}}."""
+    snaps = []
+    for f in sorted(HISTORY.glob("*.json")):
+        try:
+            snap = json.loads(f.read_text())
+        except ValueError:
+            continue
+        _snapshot_master(snap["teams"])
+        snaps.append(snap)
+    dates = [s["date"] for s in snaps]
+    teams: dict[str, dict] = {}
+    for i, snap in enumerate(snaps):
+        for tid, r in snap["teams"].items():
+            t = teams.setdefault(tid, {"dates": dates, **{k: [None] * len(snaps) for k in TREND_SERIES}})
+            for name, key in TREND_SERIES.items():
+                t[name][i] = r.get(key)
+    return {"dates": dates, "teams": teams}
+
+
+def build_movers(trends: dict, n: int = 8) -> dict | None:
+    """Biggest risers/fallers over about the last week: bid odds when we have a week of them,
+    otherwise Master Rank."""
+    dates = trends["dates"]
+    if len(dates) < 2:
+        return None
+    today = dt.date.fromisoformat(dates[-1])
+    teams = trends["teams"]
+
+    def coverage(series, i):
+        return sum(1 for t in teams.values() if t[series][i] is not None)
+
+    def base_index(series):
+        options = [i for i in range(len(dates) - 1) if coverage(series, i) >= 300]
+        if not options:
+            return None
+        target = today - dt.timedelta(days=7)
+        return min(options, key=lambda i: abs((dt.date.fromisoformat(dates[i]) - target).days))
+
+    b = base_index("odds") if coverage("odds", len(dates) - 1) >= 300 else None
+    if b is not None:
+        rows = []
+        for tid, t in teams.items():
+            a, z = t["odds"][b], t["odds"][-1]
+            if a is not None and z is not None and abs(z - a) >= 0.005:
+                rows.append({"id": tid, "from": round(a, 3), "to": round(z, 3), "change": round(z - a, 3)})
+        metric = "odds"
+    else:
+        b = base_index("master")
+        if b is None:
+            return None
+        rows = []
+        for tid, t in teams.items():
+            a, z = t["master"][b], t["master"][-1]
+            if a and z and min(a, z) <= 100 and a != z:   # keep it to teams that matter
+                rows.append({"id": tid, "from": a, "to": z, "change": a - z})  # positive = moved up
+        metric = "master"
+    rows.sort(key=lambda r: -r["change"])
+    return {"metric": metric, "since": dates[b], "to": dates[-1],
+            "up": [r for r in rows if r["change"] > 0][:n],
+            "down": [r for r in rows if r["change"] < 0][::-1][:n]}
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "team").mkdir(exist_ok=True)
@@ -590,9 +691,13 @@ def main() -> int:
     add_master_rank(teams_out)
     bracket = build_bracket(teams_out)
     bracket["projected"] = project_season(teams_out, games_by_team)
+    save_snapshot(teams_out, rank_source)
+    trends = build_trends()
+    bracket["movers"] = build_movers(trends)
     for tid, games in games_by_team.items():
-        (OUT / "team" / f"{tid}.json").write_text(
-            json.dumps({"id": tid, "games": games, "roster": rosters[tid]}, separators=(",", ":")))
+        (OUT / "team" / f"{tid}.json").write_text(json.dumps(
+            {"id": tid, "games": games, "roster": rosters[tid], "trend": trends["teams"].get(tid)},
+            separators=(",", ":")))
     (OUT / "bracket.json").write_text(json.dumps(bracket, separators=(",", ":")))
 
     meta = {
@@ -607,14 +712,6 @@ def main() -> int:
     }
     (OUT / "teams.json").write_text(json.dumps(meta, separators=(",", ":")))
 
-    # Daily snapshot of every team's rankings, kept for the future bracket-projection model.
-    hist = OUT / "history"
-    hist.mkdir(exist_ok=True)
-    snap_keys = ("wins", "losses", "ap", "net", "bpiRank", "sor", "trank", "wab", "wabRank", "sos", "ncsos", "quads",
-                 "masterAvg", "masterRank")
-    snapshot = {"date": dt.datetime.now(EASTERN).date().isoformat(), "quadSource": rank_source,
-                "teams": {t["id"]: {k: t[k] for k in snap_keys} for t in teams_out}}
-    (hist / f"{snapshot['date']}.json").write_text(json.dumps(snapshot, separators=(",", ":")))
     log(f"Wrote {len(teams_out)} teams to {OUT}")
     return 0
 

@@ -5,6 +5,7 @@
 //         #/margin      -> margin of defeat (points lost by, and who to)
 //         #/compare/<id>/<id> -> two teams side by side
 //         #/bracket     -> seed list + bubble watch, today or projected (data/bracket.json)
+//         #/charts      -> movers, best-vs-deserving scatter, team résumé + trend charts
 
 const state = { meta: null, byId: {}, sort: null, search: "", conf: "", modTop: "50", modConf: "" };
 const app = document.getElementById("app");
@@ -52,12 +53,14 @@ function route() {
   const m = location.hash.match(/^#\/team\/(\w+)/);
   const c = location.hash.match(/^#\/compare(?:\/(\w*))?(?:\/(\w*))?/);
   const page = m ? "team" : c ? "compare" : location.hash.startsWith("#/margin") ? "margin"
-    : location.hash.startsWith("#/bracket") ? "bracket" : "home";
+    : location.hash.startsWith("#/bracket") ? "bracket" : location.hash.startsWith("#/charts") ? "charts" : "home";
+  Charts.hideTip();
   document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.nav === page));
   if (m && state.byId[m[1]]) renderTeam(m[1]);
   else if (c) renderCompare(c[1], c[2]);
   else if (page === "margin") renderMargin();
   else if (page === "bracket") renderBracket();
+  else if (page === "charts") renderCharts();
   else renderHome();
   window.scrollTo(0, 0);
 }
@@ -219,6 +222,18 @@ async function renderTeam(id) {
         : tile("Seed Today", t.projSeed, t.bidChance != null ? `${pctText(t.bidChance)} bid odds` : "")}
     </div>
 
+    <div class="chart-row">
+      <section class="card">
+        <div class="card-head"><span>Résumé</span><span class="dim-head">Every game by opponent rank</span></div>
+        <div class="chart-note">Higher dots = tougher opponents (${rankSourceLabel()} rank). Green won, red lost, hollow still to play.</div>
+        <div class="chart-box" id="resume-chart"></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><span>Ranking Trends</span><span class="dim-head">Higher is better</span></div>
+        <div class="chart-box" id="trend-chart"></div>
+      </section>
+    </div>
+
     <div class="layout">
       <div class="quads">
         ${[1, 2, 3, 4].map((q) => quadCard(q, t, games)).join("")}
@@ -238,6 +253,8 @@ async function renderTeam(id) {
     if (first) location.hash = `#/team/${first.id}`;
   });
   document.getElementById("pick-team").addEventListener("change", (e) => { location.hash = `#/team/${e.target.value}`; });
+  Charts.resume(document.getElementById("resume-chart"), games, { byId: state.byId, rankLabel: rankSourceLabel() });
+  Charts.trends(document.getElementById("trend-chart"), detail.trend);
   app.querySelectorAll(".standings tr[data-id]").forEach((tr) =>
     tr.addEventListener("click", () => { location.hash = `#/team/${tr.dataset.id}`; }));
 }
@@ -657,6 +674,88 @@ async function renderBracket() {
     store.set("bracketMode", btn.dataset.mode);
     renderBracket();
   }));
+}
+
+// ---------- charts page ----------
+async function renderCharts() {
+  document.title = "Charts · Nasta's Bracket Lab";
+  if (!bracketData) {
+    app.innerHTML = `<p class="loading">Loading…</p>`;
+    bracketData = await (await fetch("data/bracket.json", { cache: "no-cache" })).json();
+    if (!location.hash.startsWith("#/charts")) return;
+  }
+  const mv = bracketData.movers;
+  const confs = [...new Set(state.meta.teams.map((t) => t.conf))].sort();
+  const best = [...state.meta.teams].filter((t) => t.masterRank).sort((a, b) => a.masterRank - b.masterRank)[0];
+  const chartTeam = state.byId[store.get("chartTeam")] || best;
+  const mvLabel = mv ? (mv.metric === "odds"
+    ? `Change in tournament odds, ${fmtDate(mv.since)} to ${fmtDate(mv.to)}.`
+    : `Change in Master Rank, ${fmtDate(mv.since)} to ${fmtDate(mv.to)} (teams in or near the top 100). Switches to tournament odds once a week of odds history is saved.`) : "";
+
+  app.innerHTML = `
+    <h1 class="page-title">Charts</h1>
+    ${staleNotice()}
+    <section class="card">
+      <div class="card-head"><span>Movers</span></div>
+      ${mv ? `<div class="chart-note">${mvLabel}</div>
+      <div class="movers">
+        <div><h3 class="mini-head up">Rising</h3><div class="chart-box" id="mv-up"></div></div>
+        <div><h3 class="mini-head down">Falling</h3><div class="chart-box" id="mv-down"></div></div>
+      </div>` : `<div class="empty">Movers appear once there are two days of history.</div>`}
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span>Best vs. Most Deserving</span></div>
+      <div class="chart-note">Every D1 team: how good it is (Torvik rank, across) against what its results have earned
+        (Wins Above Bubble rank, up). Teams above the dashed line have résumés ahead of their rating; below it, the reverse.</div>
+      <div class="controls chart-controls">
+        <select id="sc-conf" aria-label="Highlight a conference"><option value="">Highlight a conference…</option>
+          ${confs.map((c) => `<option>${esc(c)}</option>`).join("")}</select>
+        <select id="sc-team" aria-label="Find a team">${teamOptions("", "Find a team…")}</select>
+      </div>
+      <div class="chart-box" id="scatter"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span>Team Charts</span></div>
+      <div class="controls chart-controls"><select id="ct-team" aria-label="Team">${teamOptions(chartTeam?.id)}</select>
+        <a class="btn" id="ct-link" href="#/team/${chartTeam?.id}">Full résumé →</a></div>
+      <div class="chart-row inner">
+        <div><h3 class="mini-head">Résumé <span class="dim">· every game by opponent rank</span></h3><div class="chart-box" id="ct-resume"></div></div>
+        <div><h3 class="mini-head">Ranking trends <span class="dim">· higher is better</span></h3><div class="chart-box" id="ct-trend"></div></div>
+      </div>
+    </section>`;
+
+  if (mv) {
+    Charts.movers(document.getElementById("mv-up"), mv.up, { byId: state.byId, metric: mv.metric, title: "Biggest risers" });
+    Charts.movers(document.getElementById("mv-down"), mv.down, { byId: state.byId, metric: mv.metric, title: "Biggest fallers" });
+  }
+  const drawScatter = () => {
+    const conf = document.getElementById("sc-conf").value, team = document.getElementById("sc-team").value;
+    Charts.scatter(document.getElementById("scatter"), state.meta.teams, {
+      highlight: (t) => (conf && t.conf === conf) || t.id === team,
+      labelHighlighted: !!team && !conf,
+    });
+  };
+  document.getElementById("sc-conf").addEventListener("change", drawScatter);
+  document.getElementById("sc-team").addEventListener("change", drawScatter);
+  drawScatter();
+
+  const drawTeam = async (id) => {
+    const detail = await (await fetch(`data/team/${id}.json`, { cache: "no-cache" })).json();
+    Charts.resume(document.getElementById("ct-resume"), detail.games, { byId: state.byId, rankLabel: rankSourceLabel() });
+    Charts.trends(document.getElementById("ct-trend"), detail.trend);
+    document.getElementById("ct-link").href = `#/team/${id}`;
+  };
+  document.getElementById("ct-team").addEventListener("change", (e) => { store.set("chartTeam", e.target.value); drawTeam(e.target.value); });
+  if (chartTeam) drawTeam(chartTeam.id);
+}
+
+function teamOptions(selected, placeholder) {
+  const confs = [...new Set(state.meta.teams.map((t) => t.conf))].sort();
+  return (placeholder ? `<option value="">${placeholder}</option>` : "") + confs.map((c) => `<optgroup label="${esc(c)}">${
+    state.meta.teams.filter((t) => t.conf === c).sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => `<option value="${t.id}" ${t.id === selected ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</optgroup>`).join("");
 }
 
 boot().catch((e) => {
